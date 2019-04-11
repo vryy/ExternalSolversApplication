@@ -668,7 +668,7 @@ private:
     template< size_t TBlockSize>
     void BlockSolve(SparseMatrixType& rA, VectorType& rX, VectorType& rB, size_t& iters, double& resid)
     {
-        mprm.put("precond.coarsening.aggr.block_size",1);
+/*        mprm.put("precond.coarsening.aggr.block_size",1);*/ // why is it here?
 
         typedef amgcl::static_matrix<double, TBlockSize, TBlockSize> value_type;
         typedef amgcl::static_matrix<double, TBlockSize, 1> rhs_type;
