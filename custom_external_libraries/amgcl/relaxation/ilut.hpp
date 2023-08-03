@@ -4,7 +4,7 @@
 /*
 The MIT License
 
-Copyright (c) 2012-2016 Denis Demidov <dennis.demidov@gmail.com>
+Copyright (c) 2012-2022 Denis Demidov <dennis.demidov@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -35,8 +35,6 @@ THE SOFTWARE.
 #include <queue>
 #include <cmath>
 
-#include <boost/typeof/typeof.hpp>
-#include <boost/foreach.hpp>
 
 #include <amgcl/backend/builtin.hpp>
 #include <amgcl/util.hpp>
@@ -57,16 +55,20 @@ namespace relaxation {
 template <class Backend>
 struct ilut {
     typedef typename Backend::value_type      value_type;
+    typedef typename Backend::col_type        col_type;
+    typedef typename Backend::ptr_type        ptr_type;
     typedef typename Backend::matrix          matrix;
     typedef typename Backend::matrix_diagonal matrix_diagonal;
     typedef typename Backend::vector          vector;
 
     typedef typename math::scalar_of<value_type>::type scalar_type;
 
+    typedef detail::ilu_solve<Backend> ilu_solve;
+
     /// Relaxation parameters.
     struct params {
-        /// Maximum fill-in.
-        int p;
+        /// Fill factor.
+        scalar_type p;
 
         /// Minimum magnitude of non-zero elements relative to the current row norm.
         scalar_type tau;
@@ -74,71 +76,67 @@ struct ilut {
         /// Damping factor.
         scalar_type damping;
 
-        /// Number of Jacobi iterations.
-        /** \note Used for approximate solution of triangular systems on parallel backends */
-        unsigned jacobi_iters;
+        /// Parameters for sparse triangular system solver
+        typename ilu_solve::params solve;
 
-        params() : p(2), tau(1e-2f), damping(1), jacobi_iters(2) {}
+        params() : p(2), tau(1e-2f), damping(1) {}
 
+#ifndef AMGCL_NO_BOOST
         params(const boost::property_tree::ptree &p)
             : AMGCL_PARAMS_IMPORT_VALUE(p, p)
             , AMGCL_PARAMS_IMPORT_VALUE(p, tau)
             , AMGCL_PARAMS_IMPORT_VALUE(p, damping)
-            , AMGCL_PARAMS_IMPORT_VALUE(p, jacobi_iters)
-        {}
+            , AMGCL_PARAMS_IMPORT_CHILD(p, solve)
+        {
+            check_params(p, {"p", "tau", "damping", "solve"});
+        }
 
         void get(boost::property_tree::ptree &p, const std::string &path) const {
             AMGCL_PARAMS_EXPORT_VALUE(p, path, p);
             AMGCL_PARAMS_EXPORT_VALUE(p, path, tau);
             AMGCL_PARAMS_EXPORT_VALUE(p, path, damping);
-            AMGCL_PARAMS_EXPORT_VALUE(p, path, jacobi_iters);
+            AMGCL_PARAMS_EXPORT_CHILD(p, path, solve);
         }
-    };
+#endif
+    } prm;
 
     /// \copydoc amgcl::relaxation::damped_jacobi::damped_jacobi
     template <class Matrix>
     ilut( const Matrix &A, const params &prm, const typename Backend::params &bprm)
+      : prm(prm)
     {
-        typedef typename backend::row_iterator<Matrix>::type row_iterator;
         const size_t n = backend::rows(A);
-
-        BOOST_AUTO(Aptr, A.ptr_data());
-        BOOST_AUTO(Acol, A.col_data());
 
         size_t Lnz = 0, Unz = 0;
 
         for(ptrdiff_t i = 0; i < static_cast<ptrdiff_t>(n); ++i) {
-            ptrdiff_t row_beg = Aptr[i];
-            ptrdiff_t row_end = Aptr[i + 1];
+            ptrdiff_t row_beg = A.ptr[i];
+            ptrdiff_t row_end = A.ptr[i + 1];
 
+            int lenL = 0, lenU = 0;
             for(ptrdiff_t j = row_beg; j < row_end; ++j) {
-                ptrdiff_t c = Acol[j];
+                ptrdiff_t c = A.col[j];
                 if (c < i)
-                    ++Lnz;
+                    ++lenL;
                 else if (c > i)
-                    ++Unz;
+                    ++lenU;
             }
+
+            Lnz += static_cast<size_t>(lenL * prm.p);
+            Unz += static_cast<size_t>(lenU * prm.p);
         }
 
-        boost::shared_ptr<build_matrix> L = boost::make_shared<build_matrix>();
-        boost::shared_ptr<build_matrix> U = boost::make_shared<build_matrix>();
+        auto L = std::make_shared<build_matrix>();
+        auto U = std::make_shared<build_matrix>();
 
-        L->nrows = L->ncols = n;
-        L->ptr.reserve(n+1); L->ptr.push_back(0);
-        L->col.reserve(Lnz + n * prm.p);
-        L->val.reserve(Lnz + n * prm.p);
+        L->set_size(n, n); L->set_nonzeros(Lnz); L->ptr[0] = 0;
+        U->set_size(n, n); U->set_nonzeros(Unz); U->ptr[0] = 0;
 
-        U->nrows = U->ncols = n;
-        U->ptr.reserve(n+1); U->ptr.push_back(0);
-        U->col.reserve(Unz + n * prm.p);
-        U->val.reserve(Unz + n * prm.p);
-
-        std::vector<value_type> D;
-        D.reserve(n);
+        auto D = std::make_shared<backend::numa_vector<value_type> >(n, false);
 
         sparse_vector w(n);
 
-        for(ptrdiff_t i = 0; i < static_cast<ptrdiff_t>(n); ++i) {
+        for(ptrdiff_t i = 0, Lhead = 0, Uhead = 0; i < static_cast<ptrdiff_t>(n); ++i) {
             w.dia = i;
 
             int lenL = 0;
@@ -146,69 +144,78 @@ struct ilut {
 
             scalar_type tol = math::zero<scalar_type>();
 
-            for(row_iterator a = backend::row_begin(A, i); a; ++a) {
+            for(auto a = backend::row_begin(A, i); a; ++a) {
                 w[a.col()] = a.value();
                 tol += math::norm(a.value());
 
-                if (a.col() <  i) ++lenL;
-                if (a.col() >= i) ++lenU;
+                if (a.col() < i) ++lenL;
+                if (a.col() > i) ++lenU;
             }
-            tol = prm.tau / (lenL + lenU);
+            tol *= prm.tau / (lenL + lenU);
 
             while(!w.q.empty()) {
                 ptrdiff_t k = w.next_nonzero();
-                w[k] = D[k] * w[k];
+                w[k] = w[k] * (*D)[k];
                 value_type wk = w[k];
 
                 if (math::norm(wk) > tol) {
-                    for(ptrdiff_t j = U->ptr[k]; j < U->ptr[k+1]; ++j)
+                    for(ptrdiff_t j = U->ptr[k]; j < static_cast<ptrdiff_t>(U->ptr[k+1]); ++j)
                         w[U->col[j]] -= wk * U->val[j];
                 }
             }
 
-            w.move_to(lenL + prm.p, lenU + prm.p, tol, *L, *U, D);
+            w.move_to(
+                    static_cast<int>(lenL * prm.p),
+                    static_cast<int>(lenU * prm.p),
+                    tol, Lhead, *L, Uhead, *U, *D
+                    );
+
+            L->ptr[i+1] = Lhead;
+            U->ptr[i+1] = Uhead;
         }
 
-        this->D = Backend::copy_vector(D, bprm);
-        this->L = Backend::copy_matrix(L, bprm);
-        this->U = Backend::copy_matrix(U, bprm);
+        L->nnz = L->ptr[n];
+        U->nnz = U->ptr[n];
 
-        if (!serial_backend::value) {
-            t1 = Backend::create_vector(n, bprm);
-            t2 = Backend::create_vector(n, bprm);
-        }
+        ilu = std::make_shared<ilu_solve>(L, U, D, prm.solve, bprm);
     }
 
     /// \copydoc amgcl::relaxation::damped_jacobi::apply_pre
     template <class Matrix, class VectorRHS, class VectorX, class VectorTMP>
     void apply_pre(
-            const Matrix &A, const VectorRHS &rhs, VectorX &x, VectorTMP &tmp,
-            const params &prm
+            const Matrix &A, const VectorRHS &rhs, VectorX &x, VectorTMP &tmp
             ) const
     {
-        apply_dispatch(A, rhs, x, tmp, prm, serial_backend());
+        backend::residual(rhs, A, x, tmp);
+        ilu->solve(tmp);
+        backend::axpby(prm.damping, tmp, math::identity<scalar_type>(), x);
     }
 
     /// \copydoc amgcl::relaxation::damped_jacobi::apply_post
     template <class Matrix, class VectorRHS, class VectorX, class VectorTMP>
     void apply_post(
-            const Matrix &A, const VectorRHS &rhs, VectorX &x, VectorTMP &tmp,
-            const params &prm
+            const Matrix &A, const VectorRHS &rhs, VectorX &x, VectorTMP &tmp
             ) const
     {
-        apply_dispatch(A, rhs, x, tmp, prm, serial_backend());
+        backend::residual(rhs, A, x, tmp);
+        ilu->solve(tmp);
+        backend::axpby(prm.damping, tmp, math::identity<scalar_type>(), x);
+    }
+
+    template <class Matrix, class VectorRHS, class VectorX>
+    void apply(const Matrix&, const VectorRHS &rhs, VectorX &x) const
+    {
+        backend::copy(rhs, x);
+        ilu->solve(x);
+    }
+
+    size_t bytes() const {
+        return ilu->bytes();
     }
 
     private:
-        typedef typename boost::is_same<
-                Backend, backend::builtin<value_type>
-            >::type serial_backend;
-
-        typedef typename backend::builtin<value_type>::matrix build_matrix;
-
-        boost::shared_ptr<matrix> L, U;
-        boost::shared_ptr<matrix_diagonal> D;
-        boost::shared_ptr<vector> t1, t2;
+        typedef typename backend::builtin<value_type, col_type, ptr_type>::matrix build_matrix;
+        std::shared_ptr<ilu_solve> ilu;
 
         struct sparse_vector {
             struct nonzero {
@@ -217,7 +224,7 @@ struct ilut {
 
                 nonzero() : col(-1) {}
 
-                nonzero(ptrdiff_t col, value_type val = value_type())
+                nonzero(ptrdiff_t col, const value_type &val = math::zero<value_type>())
                     : col(col), val(val) {}
             };
 
@@ -247,7 +254,7 @@ struct ilut {
 
             value_type operator[](ptrdiff_t i) const {
                 if (idx[i] >= 0) return nz[idx[i]].val;
-                return value_type();
+                return math::zero<value_type>();
             }
 
             value_type& operator[](ptrdiff_t i) {
@@ -317,7 +324,9 @@ struct ilut {
 
             void move_to(
                     int lp, int up, scalar_type tol,
-                    build_matrix &L, build_matrix &U, std::vector<value_type> &D
+                    ptrdiff_t &Lhead, build_matrix &L,
+                    ptrdiff_t &Uhead, build_matrix &U,
+                    backend::numa_vector<value_type> &D
                     )
             {
                 typedef typename std::vector<nonzero>::iterator ptr;
@@ -344,50 +353,31 @@ struct ilut {
 
                 // copy L to the output matrix.
                 for(ptr a = b; a != lend; ++a) {
-                    L.col.push_back(a->col);
-                    L.val.push_back(a->val);
+                    L.col[Lhead] = a->col;
+                    L.val[Lhead] = a->val;
+
+                    ++Lhead;
                 }
-                L.ptr.push_back(L.val.size());
 
                 // Store inverted diagonal.
-                D.push_back(math::inverse(m->val));
-                ++m;
+                D[dia] = math::inverse(m->val);
 
-                // copy U to the output matrix.
-                for(ptr a = m; a != uend; ++a) {
-                    U.col.push_back(a->col);
-                    U.val.push_back(a->val);
+                if (m != uend) {
+                    ++m;
+
+                    // copy U to the output matrix.
+                    for(ptr a = m; a != uend; ++a) {
+                        U.col[Uhead] = a->col;
+                        U.val[Uhead] = a->val;
+
+                        ++Uhead;
+                    }
                 }
-                U.ptr.push_back(U.val.size());
 
-                BOOST_FOREACH(const nonzero &e, nz) idx[e.col] = -1;
+                for(const nonzero &e : nz) idx[e.col] = -1;
                 nz.clear();
             }
         };
-
-        template <class Matrix, class VectorRHS, class VectorX, class VectorTMP>
-        void apply_dispatch(
-                const Matrix &A, const VectorRHS &rhs, VectorX &x, VectorTMP &tmp,
-                const params &prm, boost::true_type
-                ) const
-        {
-            backend::residual(rhs, A, x, tmp);
-            relaxation::detail::serial_ilu_solve(*L, *U, *D, tmp);
-            backend::axpby(prm.damping, tmp, math::identity<scalar_type>(), x);
-        }
-
-        template <class Matrix, class VectorRHS, class VectorX, class VectorTMP>
-        void apply_dispatch(
-                const Matrix &A, const VectorRHS &rhs, VectorX &x, VectorTMP &tmp,
-                const params &prm, boost::false_type
-                ) const
-        {
-            backend::residual(rhs, A, x, tmp);
-            relaxation::detail::parallel_ilu_solve(
-                    *L, *U, *D, tmp, *t1, *t2, prm.jacobi_iters
-                    );
-            backend::axpby(prm.damping, tmp, math::identity<scalar_type>(), x);
-        }
 };
 
 } // namespace relaxation

@@ -4,7 +4,7 @@
 /*
 The MIT License
 
-Copyright (c) 2012-2016 Denis Demidov <dennis.demidov@gmail.com>
+Copyright (c) 2012-2022 Denis Demidov <dennis.demidov@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -46,12 +46,11 @@ THE SOFTWARE.
  */
 #include <vector>
 #include <algorithm>
-#include <boost/range/algorithm.hpp>
-#include <boost/range/numeric.hpp>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
+#include <amgcl/backend/interface.hpp>
 #include <amgcl/value_type/interface.hpp>
 #include <amgcl/detail/sort_row.hpp>
 
@@ -59,72 +58,70 @@ namespace amgcl {
 namespace backend {
 
 //---------------------------------------------------------------------------
-template <class Idx, class Val>
-void spgemm_saad(
-        Idx A_rows, Idx B_cols,
-        const Idx *A_ptr, const Idx *A_col, const Val *A_val,
-        const Idx *B_ptr, const Idx *B_col, const Val *B_val,
-        std::vector<Idx> &C_ptr, std::vector<Idx> &C_col, std::vector<Val> &C_val,
-        bool sort = true
-        )
+template <class AMatrix, class BMatrix, class CMatrix>
+void spgemm_saad(const AMatrix &A, const BMatrix &B, CMatrix &C, bool sort = true)
 {
-    C_ptr.resize(A_rows + 1);
-    C_ptr[0] = 0;
+    typedef typename backend::value_type<CMatrix>::type Val;
+    typedef typename backend::col_type<CMatrix>::type Col;
+    typedef ptrdiff_t Idx;
+
+    C.set_size(A.nrows, B.ncols);
+    C.ptr[0] = 0;
 
 #pragma omp parallel
     {
-        std::vector<ptrdiff_t> marker(B_cols, -1);
+        std::vector<ptrdiff_t> marker(B.ncols, -1);
 
 #pragma omp for
-        for(Idx ia = 0; ia < A_rows; ++ia) {
-            for(Idx ja = A_ptr[ia], ea = A_ptr[ia+1]; ja < ea; ++ja) {
-                Idx ca = A_col[ja];
+        for(Idx ia = 0; ia < static_cast<Idx>(A.nrows); ++ia) {
+            Col C_cols = 0;
+            for(Idx ja = A.ptr[ia], ea = A.ptr[ia+1]; ja < ea; ++ja) {
+                Col ca = A.col[ja];
 
-                for(Idx jb = B_ptr[ca], eb = B_ptr[ca+1]; jb < eb; ++jb) {
-                    Idx cb = B_col[jb];
+                for(Idx jb = B.ptr[ca], eb = B.ptr[ca+1]; jb < eb; ++jb) {
+                    Col cb = B.col[jb];
                     if (marker[cb] != ia) {
                         marker[cb]  = ia;
-                        ++C_ptr[ia+1];
+                        ++C_cols;
                     }
                 }
             }
+            C.ptr[ia + 1] = C_cols;
         }
+    }
 
-        boost::fill(marker, -1);
+    C.set_nonzeros(C.scan_row_sizes());
 
-#pragma omp single
-        {
-            boost::partial_sum(C_ptr, C_ptr.begin());
-            C_col.resize(C_ptr.back());
-            C_val.resize(C_ptr.back());
-        }
+#pragma omp parallel
+    {
+        std::vector<ptrdiff_t> marker(B.ncols, -1);
 
 #pragma omp for
-        for(Idx ia = 0; ia < A_rows; ++ia) {
-            Idx row_beg = C_ptr[ia];
+        for(Idx ia = 0; ia < static_cast<Idx>(A.nrows); ++ia) {
+            Idx row_beg = C.ptr[ia];
             Idx row_end = row_beg;
 
-            for(Idx ja = A_ptr[ia], ea = A_ptr[ia+1]; ja < ea; ++ja) {
-                Idx ca = A_col[ja];
-                Val va = A_val[ja];
+            for(Idx ja = A.ptr[ia], ea = A.ptr[ia+1]; ja < ea; ++ja) {
+                Col ca = A.col[ja];
+                Val va = A.val[ja];
 
-                for(Idx jb = B_ptr[ca], eb = B_ptr[ca+1]; jb < eb; ++jb) {
-                    Idx cb = B_col[jb];
-                    Val vb = B_val[jb];
+                for(Idx jb = B.ptr[ca], eb = B.ptr[ca+1]; jb < eb; ++jb) {
+                    Col cb = B.col[jb];
+                    Val vb = B.val[jb];
 
                     if (marker[cb] < row_beg) {
                         marker[cb] = row_end;
-                        C_col[row_end] = cb;
-                        C_val[row_end] = va * vb;
+                        C.col[row_end] = cb;
+                        C.val[row_end] = va * vb;
                         ++row_end;
                     } else {
-                        C_val[marker[cb]] += va * vb;
+                        C.val[marker[cb]] += va * vb;
                     }
                 }
             }
 
             if (sort) amgcl::detail::sort_row(
-                    &C_col[row_beg], &C_val[row_beg], row_end - row_beg);
+                    C.col + row_beg, C.val + row_beg, row_end - row_beg);
         }
     }
 }
@@ -170,8 +167,8 @@ Idx* merge_rows(
 
 template <class Idx, class Val>
 Idx* merge_rows(
-        Val alpha1, const Idx *col1, const Idx *col1_end, const Val *val1,
-        Val alpha2, const Idx *col2, const Idx *col2_end, const Val *val2,
+        const Val &alpha1, const Idx *col1, const Idx *col1_end, const Val *val1,
+        const Val &alpha2, const Idx *col2, const Idx *col2_end, const Val *val2,
         Idx *col3, Val *val3
         )
 {
@@ -214,14 +211,14 @@ Idx* merge_rows(
     return col3;
 }
 
-template <class Idx>
-Idx prod_row_width(
-        const Idx *acol, const Idx *acol_end,
-        const Idx *bptr, const Idx *bcol,
-        Idx *tmp_col1, Idx *tmp_col2, Idx *tmp_col3
+template <class Col, class Ptr>
+Ptr prod_row_width(
+        const Col *acol, const Col *acol_end,
+        const Ptr *bptr, const Col *bcol,
+        Col *tmp_col1, Col *tmp_col2, Col *tmp_col3
         )
 {
-    const Idx nrows = acol_end - acol;
+    const Col nrows = acol_end - acol;
 
     /* No rows to merge, nothing to do */
     if (nrows == 0) return 0;
@@ -248,9 +245,9 @@ Idx prod_row_width(
      * Merging by pairs allows to work with short rows as often as possible.
      */
     // Merge first two.
-    Idx a1 = *acol++;
-    Idx a2 = *acol++;
-    Idx c_col1 = merge_rows<true>(
+    Col a1 = *acol++;
+    Col a2 = *acol++;
+    Col c_col1 = merge_rows<true>(
             bcol + bptr[a1], bcol + bptr[a1+1],
             bcol + bptr[a2], bcol + bptr[a2+1],
             tmp_col1
@@ -261,7 +258,7 @@ Idx prod_row_width(
         a1 = *acol++;
         a2 = *acol++;
 
-        Idx c_col2 = merge_rows<true>(
+        Col c_col2 = merge_rows<true>(
                 bcol + bptr[a1], bcol + bptr[a1+1],
                 bcol + bptr[a2], bcol + bptr[a2+1],
                 tmp_col2
@@ -293,28 +290,28 @@ Idx prod_row_width(
             ) - tmp_col2;
 }
 
-template <class Idx, class Val>
+template <class Col, class Ptr, class Val>
 void prod_row(
-        const Idx *acol, const Idx *acol_end, const Val *aval,
-        const Idx *bptr, const Idx *bcol, const Val *bval,
-        Idx *out_col, Val *out_val,
-        Idx *tm2_col, Val *tm2_val,
-        Idx *tm3_col, Val *tm3_val
+        const Col *acol, const Col *acol_end, const Val *aval,
+        const Ptr *bptr, const Col *bcol, const Val *bval,
+        Col *out_col, Val *out_val,
+        Col *tm2_col, Val *tm2_val,
+        Col *tm3_col, Val *tm3_val
         )
 {
-    const Idx nrows = acol_end - acol;
+    const Col nrows = acol_end - acol;
 
     /* No rows to merge, nothing to do */
     if (nrows == 0) return;
 
     /* Single row, just copy it to output */
     if (nrows == 1) {
-        Idx ac = *acol;
+        Col ac = *acol;
         Val av = *aval;
 
         const Val *bv = bval + bptr[ac];
-        const Idx *bc = bcol + bptr[ac];
-        const Idx *be = bcol + bptr[ac+1];
+        const Col *bc = bcol + bptr[ac];
+        const Col *be = bcol + bptr[ac+1];
 
         while(bc != be) {
             *out_col++ = *bc++;
@@ -326,8 +323,8 @@ void prod_row(
 
     /* Two rows, merge them */
     if (nrows == 2) {
-        Idx ac1 = acol[0];
-        Idx ac2 = acol[1];
+        Col ac1 = acol[0];
+        Col ac2 = acol[1];
 
         Val av1 = aval[0];
         Val av2 = aval[1];
@@ -348,16 +345,16 @@ void prod_row(
      * Merging by pairs allows to work with short rows as often as possible.
      */
     // Merge first two.
-    Idx ac1 = *acol++;
-    Idx ac2 = *acol++;
+    Col ac1 = *acol++;
+    Col ac2 = *acol++;
 
     Val av1 = *aval++;
     Val av2 = *aval++;
 
-    Idx *tm1_col = out_col;
+    Col *tm1_col = out_col;
     Val *tm1_val = out_val;
 
-    Idx c_col1 = merge_rows(
+    Col c_col1 = merge_rows(
             av1, bcol + bptr[ac1], bcol + bptr[ac1+1], bval + bptr[ac1],
             av2, bcol + bptr[ac2], bcol + bptr[ac2+1], bval + bptr[ac2],
             tm1_col, tm1_val
@@ -371,7 +368,7 @@ void prod_row(
         av1 = *aval++;
         av2 = *aval++;
 
-        Idx c_col2 = merge_rows(
+        Col c_col2 = merge_rows(
                 av1, bcol + bptr[ac1], bcol + bptr[ac1+1], bval + bptr[ac1],
                 av2, bcol + bptr[ac2], bcol + bptr[ac2+1], bval + bptr[ac2],
                 tm2_col, tm2_val
@@ -410,14 +407,12 @@ void prod_row(
     }
 }
 
-template <class Idx, class Val>
-void spgemm_rmerge(
-        Idx A_rows,
-        const Idx *A_ptr, const Idx *A_col, const Val *A_val,
-        const Idx *B_ptr, const Idx *B_col, const Val *B_val,
-        std::vector<Idx> &C_ptr, std::vector<Idx> &C_col, std::vector<Val> &C_val
-        )
-{
+template <class AMatrix, class BMatrix, class CMatrix>
+void spgemm_rmerge(const AMatrix &A, const BMatrix &B, CMatrix &C) {
+    typedef typename backend::value_type<CMatrix>::type Val;
+    typedef typename backend::col_type<CMatrix>::type Col;
+    typedef ptrdiff_t Idx;
+
     Idx max_row_width = 0;
 
 #pragma omp parallel
@@ -425,13 +420,13 @@ void spgemm_rmerge(
         Idx my_max = 0;
 
 #pragma omp for
-        for(int i = 0; i < A_rows; ++i) {
-            Idx row_beg = A_ptr[i];
-            Idx row_end = A_ptr[i+1];
+        for(int i = 0; i < static_cast<Idx>(A.nrows); ++i) {
+            Idx row_beg = A.ptr[i];
+            Idx row_end = A.ptr[i+1];
             Idx row_width = 0;
             for(Idx j = row_beg; j < row_end; ++j) {
-                Idx a_col = A_col[j];
-                row_width += B_ptr[a_col + 1] - B_ptr[a_col];
+                Idx a_col = A.col[j];
+                row_width += B.ptr[a_col + 1] - B.ptr[a_col];
             }
             my_max = std::max(my_max, row_width);
         }
@@ -446,7 +441,7 @@ void spgemm_rmerge(
     const int nthreads = 1;
 #endif
 
-    std::vector< std::vector<Idx> > tmp_col(nthreads);
+    std::vector< std::vector<Col> > tmp_col(nthreads);
     std::vector< std::vector<Val> > tmp_val(nthreads);
 
     for(int i = 0; i < nthreads; ++i) {
@@ -454,8 +449,8 @@ void spgemm_rmerge(
         tmp_val[i].resize(2 * max_row_width);
     }
 
-    C_ptr.resize(A_rows + 1);
-    C_ptr[0] = 0;
+    C.set_size(A.nrows, B.ncols);
+    C.ptr[0] = 0;
 
 
 #pragma omp parallel
@@ -466,24 +461,21 @@ void spgemm_rmerge(
         const int tid = 0;
 #endif
 
-        Idx *t_col = &tmp_col[tid][0];
+        Col *t_col = &tmp_col[tid][0];
 
 #pragma omp for
-        for(Idx i = 0; i < A_rows; ++i) {
-            Idx row_beg = A_ptr[i];
-            Idx row_end = A_ptr[i+1];
+        for(Idx i = 0; i < static_cast<Idx>(A.nrows); ++i) {
+            Idx row_beg = A.ptr[i];
+            Idx row_end = A.ptr[i+1];
 
-            C_ptr[i+1] = prod_row_width(
-                    A_col + row_beg, A_col + row_end, B_ptr, B_col,
+            C.ptr[i+1] = prod_row_width(
+                    A.col + row_beg, A.col + row_end, B.ptr, B.col,
                     t_col, t_col + max_row_width, t_col + 2 * max_row_width
                     );
         }
     }
 
-    boost::partial_sum(C_ptr, C_ptr.begin());
-
-    C_col.resize(C_ptr.back());
-    C_val.resize(C_ptr.back());
+    C.set_nonzeros(C.scan_row_sizes());
 
 #pragma omp parallel
     {
@@ -493,18 +485,18 @@ void spgemm_rmerge(
         const int tid = 0;
 #endif
 
-        Idx *t_col = tmp_col[tid].data();
+        Col *t_col = tmp_col[tid].data();
         Val *t_val = tmp_val[tid].data();
 
 #pragma omp for
-        for(Idx i = 0; i < A_rows; ++i) {
-            Idx row_beg = A_ptr[i];
-            Idx row_end = A_ptr[i+1];
+        for(Idx i = 0; i < static_cast<Idx>(A.nrows); ++i) {
+            Idx row_beg = A.ptr[i];
+            Idx row_end = A.ptr[i+1];
 
             prod_row(
-                    A_col + row_beg, A_col + row_end, A_val + row_beg,
-                    B_ptr, B_col, B_val,
-                    &C_col[0] + C_ptr[i], &C_val[0] + C_ptr[i],
+                    A.col + row_beg, A.col + row_end, A.val + row_beg,
+                    B.ptr, B.col, B.val,
+                    C.col + C.ptr[i], C.val + C.ptr[i],
                     t_col, t_val, t_col + max_row_width, t_val + max_row_width
                     );
         }

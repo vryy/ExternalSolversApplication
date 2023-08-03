@@ -4,7 +4,7 @@
 /*
 The MIT License
 
-Copyright (c) 2012-2016 Denis Demidov <dennis.demidov@gmail.com>
+Copyright (c) 2012-2022 Denis Demidov <dennis.demidov@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -31,23 +31,26 @@ THE SOFTWARE.
  * \brief   Sparse matrix operations for matrices that provide row_iterator.
  */
 
-#include <boost/type_traits.hpp>
+#include <type_traits>
 #include <amgcl/backend/interface.hpp>
+#include <amgcl/value_type/interface.hpp>
 
 namespace amgcl {
 namespace backend {
 namespace detail {
 
 template <class Matrix, class Enable = void>
-struct use_builtin_matrix_ops : boost::false_type {};
+struct use_builtin_matrix_ops : std::false_type {};
 
 } // namespace detail
 
 template <class Alpha, class Matrix, class Vector1, class Beta, class Vector2>
 struct spmv_impl<
     Alpha, Matrix, Vector1, Beta, Vector2,
-    typename boost::enable_if<
-        typename detail::use_builtin_matrix_ops<Matrix>::type
+    typename std::enable_if<
+        detail::use_builtin_matrix_ops<Matrix>::value &&
+        math::static_rows<typename value_type<Matrix>::type>::value == math::static_rows<typename value_type<Vector1>::type>::value &&
+        math::static_rows<typename value_type<Matrix>::type>::value == math::static_rows<typename value_type<Vector2>::type>::value
         >::type
     >
 {
@@ -82,8 +85,11 @@ struct spmv_impl<
 template <class Matrix, class Vector1, class Vector2, class Vector3>
 struct residual_impl<
     Matrix, Vector1, Vector2, Vector3,
-    typename boost::enable_if<
-        typename detail::use_builtin_matrix_ops<Matrix>::type
+    typename std::enable_if<
+        detail::use_builtin_matrix_ops<Matrix>::value &&
+        math::static_rows<typename value_type<Matrix>::type>::value == math::static_rows<typename value_type<Vector1>::type>::value &&
+        math::static_rows<typename value_type<Matrix>::type>::value == math::static_rows<typename value_type<Vector2>::type>::value &&
+        math::static_rows<typename value_type<Matrix>::type>::value == math::static_rows<typename value_type<Vector3>::type>::value
         >::type
     >
 {
@@ -105,6 +111,60 @@ struct residual_impl<
                 sum += a.value() * x[ a.col() ];
             res[i] = rhs[i] - sum;
         }
+    }
+};
+
+/* Allows to do matrix-vector products with mixed scalar/nonscalar types.
+ * Reinterprets pointers to the vectors data into appropriate types.
+ */
+template <class Alpha, class Matrix, class Vector1, class Beta, class Vector2>
+struct spmv_impl<
+    Alpha, Matrix, Vector1, Beta, Vector2,
+    typename std::enable_if<
+            detail::use_builtin_matrix_ops<Matrix>::value && (
+            math::static_rows<typename value_type<Matrix>::type>::value != math::static_rows<typename value_type<Vector1>::type>::value ||
+            math::static_rows<typename value_type<Matrix>::type>::value != math::static_rows<typename value_type<Vector2>::type>::value)
+        >::type
+    >
+{
+    static void apply(
+            Alpha alpha, const Matrix &A, const Vector1 &x, Beta beta, Vector2 &y
+            )
+    {
+        typedef typename value_type<Matrix>::type V;
+
+        auto X = backend::reinterpret_as_rhs<V>(x);
+        auto Y = backend::reinterpret_as_rhs<V>(y);
+
+        spmv(alpha, A, X, beta, Y);
+    }
+};
+
+template <class Matrix, class Vector1, class Vector2, class Vector3>
+struct residual_impl<
+    Matrix, Vector1, Vector2, Vector3,
+    typename std::enable_if<
+            detail::use_builtin_matrix_ops<Matrix>::value && (
+            math::static_rows<typename value_type<Matrix>::type>::value != math::static_rows<typename value_type<Vector1>::type>::value ||
+            math::static_rows<typename value_type<Matrix>::type>::value != math::static_rows<typename value_type<Vector2>::type>::value ||
+            math::static_rows<typename value_type<Matrix>::type>::value != math::static_rows<typename value_type<Vector3>::type>::value)
+        >::type
+    >
+{
+    static void apply(
+            Vector1 const &f,
+            Matrix  const &A,
+            Vector2 const &x,
+            Vector3       &r
+            )
+    {
+        typedef typename value_type<Matrix>::type V;
+
+        auto X = backend::reinterpret_as_rhs<V>(x);
+        auto F = backend::reinterpret_as_rhs<V>(f);
+        auto R = backend::reinterpret_as_rhs<V>(r);
+
+        residual(F, A, X, R);
     }
 };
 

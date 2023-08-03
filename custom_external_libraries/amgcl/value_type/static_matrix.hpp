@@ -4,7 +4,7 @@
 /*
 The MIT License
 
-Copyright (c) 2012-2016 Denis Demidov <dennis.demidov@gmail.com>
+Copyright (c) 2012-2022 Denis Demidov <dennis.demidov@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -31,12 +31,8 @@ THE SOFTWARE.
  * \brief  Enable statically sized matrices as value types.
  */
 
-#include <boost/array.hpp>
-#include <boost/type_traits.hpp>
-
-#include <boost/numeric/ublas/matrix.hpp>
-#include <boost/numeric/ublas/storage.hpp>
-#include <boost/numeric/ublas/lu.hpp>
+#include <array>
+#include <type_traits>
 
 #include <amgcl/backend/builtin.hpp>
 #include <amgcl/value_type/interface.hpp>
@@ -45,7 +41,7 @@ namespace amgcl {
 
 template <typename T, int N, int M>
 struct static_matrix {
-    boost::array<T, N * M> buf;
+    std::array<T, N * M> buf;
 
     T operator()(int i, int j) const {
         return buf[i * M + j];
@@ -71,13 +67,22 @@ struct static_matrix {
         return buf.data();
     }
 
-    const static_matrix& operator+=(const static_matrix &y) {
+    template <typename U>
+    const static_matrix& operator=(const static_matrix<U,N,M> &y) {
+        for(int i = 0; i < N * M; ++i)
+            buf[i] = y.buf[i];
+        return *this;
+    }
+
+    template <typename U>
+    const static_matrix& operator+=(const static_matrix<U,N,M> &y) {
         for(int i = 0; i < N * M; ++i)
             buf[i] += y.buf[i];
         return *this;
     }
 
-    const static_matrix& operator-=(const static_matrix &y) {
+    template <typename U>
+    const static_matrix& operator-=(const static_matrix<U,N,M> &y) {
         for(int i = 0; i < N * M; ++i)
             buf[i] -= y.buf[i];
         return *this;
@@ -89,16 +94,6 @@ struct static_matrix {
         return *this;
     }
 
-
-    friend static_matrix operator+(static_matrix x, const static_matrix &y)
-    {
-        return x += y;
-    }
-
-    friend static_matrix operator-(static_matrix x, const static_matrix &y)
-    {
-        return x -= y;
-    }
 
     friend static_matrix operator*(T a, static_matrix x)
     {
@@ -138,10 +133,22 @@ struct static_matrix {
     }
 };
 
-template <typename T, int N, int K, int M>
+template <typename T, typename U, int N, int M>
+static_matrix<T, N, M> operator+(static_matrix<T, N, M> a, const static_matrix<U, N, M> &b)
+{
+    return a += b;
+}
+
+template <typename T, typename U, int N, int M>
+static_matrix<T, N, M> operator-(static_matrix<T, N, M> a, const static_matrix<U, N, M> &b)
+{
+    return a -= b;
+}
+
+template <typename T, typename U, int N, int K, int M>
 static_matrix<T, N, M> operator*(
         const static_matrix<T, N, K> &a,
-        const static_matrix<T, K, M> &b
+        const static_matrix<U, K, M> &b
         )
 {
     static_matrix<T, N, M> c;
@@ -157,16 +164,16 @@ static_matrix<T, N, M> operator*(
     return c;
 }
 
-template <class T> struct is_static_matrix : boost::false_type {};
+template <class T> struct is_static_matrix : std::false_type {};
 
 template <class T, int N, int M>
-struct is_static_matrix< static_matrix<T, N, M> > : boost::true_type {};
+struct is_static_matrix< static_matrix<T, N, M> > : std::true_type {};
 
 namespace backend {
 
 /// Enable static matrix as a value-type.
 template <typename T, int N, int M>
-struct is_builtin_vector< std::vector<static_matrix<T, N, M> > > : boost::true_type {};
+struct is_builtin_vector< std::vector<static_matrix<T, N, M> > > : std::true_type {};
 
 } // namespace backend
 
@@ -175,7 +182,13 @@ namespace math {
 /// Scalar type of a non-scalar type.
 template <class T, int N, int M>
 struct scalar_of< static_matrix<T, N, M> > {
-    typedef T type;
+    typedef typename scalar_of<T>::type type;
+};
+
+/// Replace scalar type in the static matrix.
+template <class T, int N, int M, class S>
+struct replace_scalar<static_matrix<T, N, M>, S> {
+    typedef static_matrix<S, N, M> type;
 };
 
 /// RHS type corresponding to a non-scalar type.
@@ -183,6 +196,24 @@ template <class T, int N>
 struct rhs_of< static_matrix<T, N, N> > {
     typedef static_matrix<T, N, 1> type;
 };
+
+/// Element type of a non-scalar type
+template <class T, int N, int M>
+struct element_of< static_matrix<T, N, M> > {
+    typedef T type;
+};
+
+/// Whether the value type is a statically sized matrix.
+template <class T, int N, int M>
+struct is_static_matrix< static_matrix<T, N, M> > : std::true_type {};
+
+/// Number of rows for statically sized matrix types.
+template <class T, int N, int M>
+struct static_rows< static_matrix<T, N, M> > : std::integral_constant<int, N> {};
+
+/// Number of columns for statically sized matrix types.
+template <class T, int N, int M>
+struct static_cols< static_matrix<T, N, M> > : std::integral_constant<int, M> {};
 
 /// Specialization of conjugate transpose for static matrices.
 template <typename T, int N, int M>
@@ -194,7 +225,7 @@ struct adjoint_impl< static_matrix<T, N, M> >
         static_matrix<T, M, N> y;
         for(int i = 0; i < N; ++i)
             for(int j = 0; j < M; ++j)
-                y(j,i) = x(i,j);
+                y(j,i) = math::adjoint(x(i,j));
         return y;
     }
 };
@@ -207,7 +238,7 @@ struct inner_product_impl< static_matrix<T, N, 1> >
     static T get(const static_matrix<T, N, 1> &x, const static_matrix<T, N, 1> &y) {
         T sum = math::zero<T>();
         for(int i = 0; i < N; ++i)
-            sum += x(i) * y(i);
+            sum += x(i) * math::adjoint(y(i));
         return sum;
     }
 };
@@ -224,7 +255,7 @@ struct inner_product_impl< static_matrix<T, N, M> >
             for(int j = 0; j < M; ++j) {
                 T sum = math::zero<T>();
                 for(int k = 0; k < N; ++k)
-                    sum += x(k,i) * y(k,j);
+                    sum += x(k,i) * math::adjoint(y(k,j));
                 p(i,j) = sum;
             }
         }
@@ -236,11 +267,11 @@ struct inner_product_impl< static_matrix<T, N, M> >
 template <typename T, int N, int M>
 struct norm_impl< static_matrix<T, N, M> >
 {
-    static T get(const static_matrix<T, N, M> &x) {
+    static typename math::scalar_of<T>::type get(const static_matrix<T, N, M> &x) {
         T s = math::zero<T>();
         for(int i = 0; i < N * M; ++i)
-            s += x(i) * x(i);
-        return sqrt(s);
+            s += x(i) * math::adjoint(x(i));
+        return sqrt(math::norm(s));
     }
 };
 
@@ -297,61 +328,15 @@ template <typename T, int N>
 struct inverse_impl< static_matrix<T, N, N> >
 {
     static static_matrix<T, N, N> get(static_matrix<T, N, N> A) {
-        // Perform LU-factorization of A in-place
-        for(int k = 0; k < N; ++k) {
-            T d = A(k,k);
-            assert(!math::is_zero(d));
-            for(int i = k+1; i < N; ++i) {
-                A(i,k) /= d;
-                for(int j = k+1; j < N; ++j)
-                    A(i,j) -= A(i,k) * A(k,j);
-            }
-        }
-
-        // Invert identity matrix in-place to get the solution.
-        static_matrix<T, N, N> y;
-        for(int k = 0; k < N; ++k) {
-            // Lower triangular solve:
-            for(int i = 0; i < N; ++i) {
-                T b = static_cast<T>(i == k);
-                for(int j = 0; j < i; ++j)
-                    b -= A(i,j) * y(j,k);
-                y(i,k) = b;
-            }
-
-            // Upper triangular solve:
-            for(int i = N; i --> 0; ) {
-                for(int j = i+1; j < N; ++j)
-                    y(i,k) -= A(i,j) * y(j,k);
-                y(i,k) /= A(i,i);
-            }
-        }
-
-        return y;
+        std::array<T, N * N> buf;
+        std::array<int, N> p;
+        detail::inverse(N, A.data(), buf.data(), p.data());
+        return A;
     }
 };
 
 
 } // namespace math
-
-namespace relaxation {
-template <class Backend> struct spai1;
-} //namespace relaxation
-
-namespace backend {
-
-template <class Backend>
-struct relaxation_is_supported<
-    Backend, relaxation::spai1,
-    typename boost::enable_if<
-        typename amgcl::is_static_matrix<
-            typename Backend::value_type
-            >::type
-        >::type
-    > : boost::false_type
-{};
-
-} // namespace backend
 } // namespace amgcl
 
 #endif

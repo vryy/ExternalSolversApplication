@@ -4,7 +4,7 @@
 /*
 The MIT License
 
-Copyright (c) 2012-2016 Denis Demidov <dennis.demidov@gmail.com>
+Copyright (c) 2012-2022 Denis Demidov <dennis.demidov@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -32,8 +32,7 @@ THE SOFTWARE.
 \ingroup adapters
 */
 
-#include <boost/static_assert.hpp>
-#include <boost/type_traits.hpp>
+#include <type_traits>
 
 #include <amgcl/util.hpp>
 #include <amgcl/backend/builtin.hpp>
@@ -41,48 +40,56 @@ THE SOFTWARE.
 namespace amgcl {
 namespace adapter {
 
-template <typename value_type>
-struct zero_copy_adapter
-    : public backend::crs<value_type, ptrdiff_t, ptrdiff_t>
-{
-    typedef backend::crs<value_type, ptrdiff_t, ptrdiff_t> Base;
+template <typename Ptr, typename Col, typename Val>
+std::shared_ptr< backend::crs<Val> >
+zero_copy(size_t nrows, size_t ncols, const Ptr *ptr, const Col *col, const Val *val) {
+    // Check that Ptr and Col types are binary-compatible with ptrdiff_t:
+    static_assert(std::is_integral<Ptr>::value, "Unsupported Ptr type");
+    static_assert(std::is_integral<Col>::value, "Unsupported Col type");
+    static_assert(sizeof(Ptr) == sizeof(ptrdiff_t), "Unsupported Ptr type");
+    static_assert(sizeof(Col) == sizeof(ptrdiff_t), "Unsupported Col type");
 
-    typedef ptrdiff_t  ptr_type;
-    typedef ptrdiff_t  col_type;
-    typedef value_type val_type;
+    auto A = std::make_shared< backend::crs<Val> >();
+    A->nrows = nrows;
+    A->ncols = ncols;
+    A->nnz   = nrows ? ptr[nrows] : 0;
 
-    const ptr_type *ptr;
-    const col_type *col;
-    const val_type *val;
+    A->ptr = (ptrdiff_t*)ptr;
+    A->col = (ptrdiff_t*)col;
+    A->val = (Val*)val;
 
-    template <typename Ptr, typename Col>
-    zero_copy_adapter(size_t n, const Ptr *ptr, const Col *col, const value_type *val)
-        : ptr(reinterpret_cast<const ptr_type*>(ptr)),
-          col(reinterpret_cast<const col_type*>(col)),
-          val(val)
-    {
-        // Check that Ptr and Col types are binary-compatible with ptrdiff_t:
-        BOOST_STATIC_ASSERT(boost::is_integral<Ptr>::value);
-        BOOST_STATIC_ASSERT(boost::is_integral<Col>::value);
-        BOOST_STATIC_ASSERT(sizeof(Ptr) == sizeof(ptr_type));
-        BOOST_STATIC_ASSERT(sizeof(Col) == sizeof(col_type));
+    A->own_data = false;
 
-        this->nrows = this->ncols = n;
-    }
-
-    virtual const ptr_type* ptr_data() const { return ptr; }
-    virtual const col_type* col_data() const { return col; }
-    virtual const val_type* val_data() const { return val; }
-
-    virtual ptr_type* ptr_data() { precondition(false, "The matrix is read-only"); return 0; }
-    virtual col_type* col_data() { precondition(false, "The matrix is read-only"); return 0; }
-    virtual val_type* val_data() { precondition(false, "The matrix is read-only"); return 0; }
-};
+    return A;
+}
 
 template <typename Ptr, typename Col, typename Val>
-boost::shared_ptr< backend::crs<Val, ptrdiff_t, ptrdiff_t> >
+std::shared_ptr< backend::crs<Val> >
 zero_copy(size_t n, const Ptr *ptr, const Col *col, const Val *val) {
-    return boost::make_shared< zero_copy_adapter<Val> >(n, ptr, col, val);
+    return zero_copy(n, n, ptr, col, val);
+}
+
+template <typename Ptr, typename Col, typename Val>
+std::shared_ptr< backend::crs<Val, Col, Ptr> >
+zero_copy_direct(size_t nrows, size_t ncols, const Ptr *ptr, const Col *col, const Val *val) {
+    auto A = std::make_shared< backend::crs<Val, Col, Ptr> >();
+    A->nrows = nrows;
+    A->ncols = ncols;
+    A->nnz   = nrows ? ptr[nrows] : 0;
+
+    A->ptr = const_cast<Ptr*>(ptr);
+    A->col = const_cast<Col*>(col);
+    A->val = const_cast<Val*>(val);
+
+    A->own_data = false;
+
+    return A;
+}
+
+template <typename Ptr, typename Col, typename Val>
+std::shared_ptr< backend::crs<Val, Col, Ptr> >
+zero_copy_direct(size_t n, const Ptr *ptr, const Col *col, const Val *val) {
+    return zero_copy_direct(n, n, ptr, col, val);
 }
 
 } // namespace adapter

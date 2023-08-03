@@ -4,7 +4,7 @@
 /*
 The MIT License
 
-Copyright (c) 2012-2016 Denis Demidov <dennis.demidov@gmail.com>
+Copyright (c) 2012-2022 Denis Demidov <dennis.demidov@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -44,7 +44,7 @@ namespace backend {
 /// Blaze backend
 /**
  * This is a backend that uses types defined in the Blaze library
- * (https://code.google.com/p/blaze-lib).
+ * (https://bitbucket.org/blaze-lib/blaze/src).
  *
  * \param real Value type.
  * \ingroup backends
@@ -53,8 +53,10 @@ template <class real>
 struct blaze {
     typedef real      value_type;
     typedef ptrdiff_t index_type;
+    typedef ptrdiff_t col_type;
+    typedef ptrdiff_t ptr_type;
 
-    struct provides_row_iterator : boost::false_type {};
+    struct provides_row_iterator : std::true_type {};
 
     typedef ::blaze::CompressedMatrix<real> matrix;
     typedef ::blaze::DynamicVector<real>    vector;
@@ -62,18 +64,14 @@ struct blaze {
     typedef solver::skyline_lu<real>        direct_solver;
 
     /// Backend parameters.
-    struct params {
-        params() {}
-        params(const boost::property_tree::ptree&) {}
-        void get(boost::property_tree::ptree&, const std::string&) const {}
-    };
+    typedef amgcl::detail::empty_params params;
 
     static std::string name() { return "blaze"; }
 
     /// Copy matrix from builtin backend.
-    static boost::shared_ptr<matrix>
+    static std::shared_ptr<matrix>
     copy_matrix(
-            boost::shared_ptr< typename builtin<real>::matrix > A,
+            std::shared_ptr< typename builtin<real>::matrix > A,
             const params&
             )
     {
@@ -84,7 +82,7 @@ struct blaze {
         const size_t n = rows(*A);
         const size_t m = cols(*A);
 
-        boost::shared_ptr<matrix> B = boost::make_shared<matrix>(n, m);
+        auto B = std::make_shared<matrix>(n, m);
 
         B->reserve(nonzeros(*A));
         for(size_t i = 0; i < n; ++i) {
@@ -98,18 +96,17 @@ struct blaze {
     }
 
     /// Copy vector from builtin backend.
-    static boost::shared_ptr<vector>
+    static std::shared_ptr<vector>
     copy_vector(typename builtin<real>::vector const &x, const params&)
     {
-        boost::shared_ptr<vector> v = boost::make_shared<vector>(
-                x.size(), &x[0]);
+        auto v = std::make_shared<vector>(x.size(), &x[0]);
         return v;
     }
 
     /// Copy vector from builtin backend.
-    static boost::shared_ptr<vector>
+    static std::shared_ptr<vector>
     copy_vector(
-            boost::shared_ptr< typename builtin<real>::vector > x,
+            std::shared_ptr< typename builtin<real>::vector > x,
             const params &prm
             )
     {
@@ -117,17 +114,17 @@ struct blaze {
     }
 
     /// Create vector of the specified size.
-    static boost::shared_ptr<vector>
+    static std::shared_ptr<vector>
     create_vector(size_t size, const params&)
     {
-        return boost::make_shared<vector>(size);
+        return std::make_shared<vector>(size);
     }
 
     /// Create direct solver for coarse level
-    static boost::shared_ptr<direct_solver>
-    create_solver(boost::shared_ptr< typename builtin<real>::matrix > A, const params&)
+    static std::shared_ptr<direct_solver>
+    create_solver(std::shared_ptr< typename builtin<real>::matrix > A, const params&)
     {
-        return boost::make_shared<direct_solver>(*A);
+        return std::make_shared<direct_solver>(*A);
     }
 
 };
@@ -135,8 +132,8 @@ struct blaze {
 //---------------------------------------------------------------------------
 // Backend interface implementation
 //---------------------------------------------------------------------------
-template < typename V >
-struct value_type < ::blaze::CompressedMatrix<V> > {
+template < typename V, bool O >
+struct value_type < ::blaze::CompressedMatrix<V, O> > {
     typedef V type;
 };
 
@@ -145,60 +142,86 @@ struct value_type < ::blaze::DynamicVector<V> > {
     typedef V type;
 };
 
-template < typename V >
-struct rows_impl< ::blaze::CompressedMatrix<V> > {
-    typedef ::blaze::CompressedMatrix<V> matrix;
-
-    static size_t get(const matrix &A) {
-        return A.rows();
-    }
-};
-
-template < typename V >
-struct cols_impl< ::blaze::CompressedMatrix<V> > {
-    typedef ::blaze::CompressedMatrix<V> matrix;
+template < typename V, bool O >
+struct cols_impl< ::blaze::CompressedMatrix<V, O> > {
+    typedef ::blaze::CompressedMatrix<V, O> matrix;
 
     static size_t get(const matrix &A) {
         return A.columns();
     }
 };
 
-template < typename V >
-struct nonzeros_impl< ::blaze::CompressedMatrix<V> > {
-    typedef ::blaze::CompressedMatrix<V> matrix;
+template < typename V, bool O >
+struct nonzeros_impl< ::blaze::CompressedMatrix<V, O> > {
+    typedef ::blaze::CompressedMatrix<V, O> matrix;
 
     static size_t get(const matrix &A) {
         return A.nonZeros();
     }
 };
 
-template < class A, class B, typename V >
-struct spmv_impl<
-    A, ::blaze::CompressedMatrix<V>, ::blaze::DynamicVector<V>,
-    B, ::blaze::DynamicVector<V>
-    >
+template < typename V, bool O >
+struct row_iterator< ::blaze::CompressedMatrix<V, O> >
 {
-    typedef ::blaze::CompressedMatrix<V> matrix;
-    typedef ::blaze::DynamicVector<V>    vector;
+    struct type {
+        typedef typename ::blaze::CompressedMatrix<V, O>::ConstIterator Base;
+        Base base;
+        Base end;
 
-    static void apply(A alpha, const matrix &A, const vector &x, B beta, vector &y)
-    {
-        if (!math::is_zero(beta))
-            y = alpha * (A * x) + beta * y;
-        else
-            y = alpha * (A * x);
+        operator bool() const {
+            return base != end;
+        }
+
+        type operator++() {
+            ++base;
+            return *this;
+        }
+
+        size_t col() const {
+            return base->index();
+        }
+
+        V value() const {
+            return base->value();
+        }
+    };
+};
+
+template < typename V, bool O >
+struct row_begin_impl< ::blaze::CompressedMatrix<V, O> > {
+    typedef typename row_iterator< ::blaze::CompressedMatrix<V, O> >::type iterator;
+    static iterator get(const ::blaze::CompressedMatrix<V, O> &A, size_t row) {
+        return iterator{A.cbegin(row), A.cend(row)};
     }
 };
 
-template < typename V >
+template < class A, class B, typename V, bool O >
+struct spmv_impl<
+    A, ::blaze::CompressedMatrix<V, O>, ::blaze::DynamicVector<V>,
+    B, ::blaze::DynamicVector<V>
+    >
+{
+    typedef ::blaze::CompressedMatrix<V, O> matrix;
+    typedef ::blaze::DynamicVector<V>    vector;
+
+    static void apply(A alpha, const matrix &K, const vector &x, B beta, vector &y)
+    {
+        if (!math::is_zero(beta))
+            y = alpha * (K * x) + beta * y;
+        else
+            y = alpha * (K * x);
+    }
+};
+
+template < typename V, bool O >
 struct residual_impl<
-    ::blaze::CompressedMatrix<V>,
+    ::blaze::CompressedMatrix<V, O>,
     ::blaze::DynamicVector<V>,
     ::blaze::DynamicVector<V>,
     ::blaze::DynamicVector<V>
     >
 {
-    typedef ::blaze::CompressedMatrix<V> matrix;
+    typedef ::blaze::CompressedMatrix<V, O> matrix;
     typedef ::blaze::DynamicVector<V>    vector;
 
     static void apply(const vector &rhs, const matrix &A, const vector &x,

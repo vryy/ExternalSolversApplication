@@ -4,7 +4,7 @@
 /*
 The MIT License
 
-Copyright (c) 2012-2016 Denis Demidov <dennis.demidov@gmail.com>
+Copyright (c) 2012-2022 Denis Demidov <dennis.demidov@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -31,7 +31,7 @@ THE SOFTWARE.
  * \brief  Sparse approximate inverse relaxation scheme.
  */
 
-#include <boost/shared_ptr.hpp>
+#include <memory>
 #include <amgcl/backend/interface.hpp>
 #include <amgcl/util.hpp>
 
@@ -53,30 +53,25 @@ struct spai0 {
 
     typedef typename math::scalar_of<value_type>::type scalar_type;
     /// Relaxation parameters.
-    struct params {
-        params() {}
-        params(const boost::property_tree::ptree&) {}
-        void get(boost::property_tree::ptree&, const std::string&) const {}
-    };
+    typedef amgcl::detail::empty_params params;
 
     /// \copydoc amgcl::relaxation::damped_jacobi::damped_jacobi
     template <class Matrix>
     spai0( const Matrix &A, const params &, const typename Backend::params &backend_prm)
     {
-        typedef typename backend::row_iterator<Matrix>::type row_iterator;
-
         const size_t n = rows(A);
 
-        boost::shared_ptr< std::vector<value_type> > m = boost::make_shared< std::vector<value_type> >(n);
+        auto m = std::make_shared< backend::numa_vector<value_type> >(n, false);
 
 #pragma omp parallel for
         for(ptrdiff_t i = 0; i < static_cast<ptrdiff_t>(n); ++i) {
-            value_type num = math::zero<value_type>();
-            value_type den = math::zero<value_type>();
+            value_type  num = math::zero<value_type>();
+            scalar_type den = math::zero<scalar_type>();
 
-            for(row_iterator a = backend::row_begin(A, i); a; ++a) {
+            for(auto a = backend::row_begin(A, i); a; ++a) {
                 value_type v = a.value();
-                den += v * v;
+                scalar_type norm_v = math::norm(v);
+                den += norm_v * norm_v;
                 if (a.col() == i) num += v;
             }
 
@@ -89,37 +84,36 @@ struct spai0 {
     /// \copydoc amgcl::relaxation::damped_jacobi::apply_pre
     template <class Matrix, class VectorRHS, class VectorX, class VectorTMP>
     void apply_pre(
-            const Matrix &A, const VectorRHS &rhs, VectorX &x, VectorTMP &tmp,
-            const params&
+            const Matrix &A, const VectorRHS &rhs, VectorX &x, VectorTMP &tmp
             ) const
     {
-        apply(A, rhs, x, tmp);
+        static const scalar_type one = math::identity<scalar_type>();
+        backend::residual(rhs, A, x, tmp);
+        backend::vmul(one, *M, tmp, one, x);
     }
 
     /// \copydoc amgcl::relaxation::damped_jacobi::apply_post
     template <class Matrix, class VectorRHS, class VectorX, class VectorTMP>
     void apply_post(
-            const Matrix &A, const VectorRHS &rhs, VectorX &x, VectorTMP &tmp,
-            const params&
+            const Matrix &A, const VectorRHS &rhs, VectorX &x, VectorTMP &tmp
             ) const
     {
-        apply(A, rhs, x, tmp);
+        static const scalar_type one = math::identity<scalar_type>();
+        backend::residual(rhs, A, x, tmp);
+        backend::vmul(one, *M, tmp, one, x);
     }
 
-    private:
-        boost::shared_ptr<matrix_diagonal> M;
+    template <class Matrix, class VectorRHS, class VectorX>
+    void apply( const Matrix&, const VectorRHS &rhs, VectorX &x) const
+    {
+        backend::vmul(math::identity<scalar_type>(), *M, rhs, math::zero<scalar_type>(), x);
+    }
 
-        template <class Matrix, class VectorRHS, class VectorX, class VectorTMP>
-        void apply(
-                const Matrix &A, const VectorRHS &rhs, VectorX &x, VectorTMP &tmp
-                ) const
-        {
-            static const scalar_type one = math::identity<scalar_type>();
+    size_t bytes() const {
+        return backend::bytes(*M);
+    }
 
-            backend::residual(rhs, A, x, tmp);
-            backend::vmul(one, *M, tmp, one, x);
-        }
-
+    std::shared_ptr<matrix_diagonal> M;
 };
 
 } // namespace relaxation

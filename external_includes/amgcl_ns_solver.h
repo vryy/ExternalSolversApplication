@@ -1,38 +1,41 @@
+//    |  /           |
+//    ' /   __| _` | __|  _ \   __|
+//    . \  |   (   | |   (   |\__ `
+//   _|\_\_|  \__,_|\__|\___/ ____/
+//                   Multi-Physics
+//
+//  License:         BSD License
+//                   Kratos default license: kratos/license.txt
+//
+//  Main authors:    Denis Demidov
+//
+//
+
 #if !defined(KRATOS_AMGCL_NAVIERSTOKES_SOLVER )
 #define  KRATOS_AMGCL_NAVIERSTOKES_SOLVER
 
 // External includes
-#include "boost/smart_ptr.hpp"
 #include <iostream>
+#include <utility>
 
 #include "includes/ublas_interface.h"
 
 // Project includes
 #include "includes/define.h"
 #include "linear_solvers/iterative_solver.h"
-#include<utility>
-//#include <amgcl/common.hpp>
-#include <amgcl/amg.hpp>
-#include <boost/utility.hpp>
-// #include <amgcl/operations_ublas.hpp>
-// #include <amgcl/interp_aggr.hpp>
-// #include <amgcl/aggr_plain.hpp>
-// #include <amgcl/level_cpu.hpp>
-// #include <amgcl/gmres.hpp>
-// #include <amgcl/bicgstab.hpp>
-// #include <amgcl/cg.hpp>
+
+#include <boost/property_tree/json_parser.hpp>
+
+#include <amgcl/adapter/crs_tuple.hpp>
 #include <amgcl/adapter/ublas.hpp>
-#include <amgcl/runtime.hpp>
-
+#include <amgcl/adapter/zero_copy.hpp>
 #include <amgcl/backend/builtin.hpp>
-#include <amgcl/coarsening/smoothed_aggregation.hpp>
-#include <amgcl/relaxation/spai0.hpp>
-#include <amgcl/solver/gmres.hpp>
-#include <amgcl/preconditioner/simple.hpp>
-
-#include <boost/utility/enable_if.hpp>
-#include <boost/type_traits/is_arithmetic.hpp>
-
+#include <amgcl/value_type/static_matrix.hpp>
+#include <amgcl/make_solver.hpp>
+#include <amgcl/make_block_solver.hpp>
+#include <amgcl/solver/runtime.hpp>
+#include <amgcl/preconditioner/schur_pressure_correction.hpp>
+#include <amgcl/preconditioner/runtime.hpp>
 
 namespace Kratos
 {
@@ -44,17 +47,6 @@ class AMGCL_NS_Solver : public LinearSolver< TSparseSpaceType,
     TDenseSpaceType, TReordererType>
 {
 public:
-    
-    struct pmask {
-        const std::vector<bool> &pm;
-
-        pmask(const std::vector<bool> &pm) : pm(pm) {}
-
-        bool operator()(size_t i) const {
-            return pm[i];
-        }
-    };
-
     /**
      * Counted pointer of AMGCL_NS_Solver
      */
@@ -67,87 +59,77 @@ public:
 
     typedef typename TDenseSpaceType::MatrixType DenseMatrixType;
 
-    AMGCL_NS_Solver(AMGCLSmoother smoother,
-                AMGCLIterativeSolverType solver,
-                AMGCLCoarseningType coarsening,
-                double NewMaxTolerance,
-                int NewMaxIterationsNumber,
-                int verbosity,
-                int gmres_size = 50
-               )
+    /// The index type definition to be consistent
+    typedef typename TSparseSpaceType::IndexType IndexType;
+
+    /// The size type definition
+    typedef std::size_t SizeType;
+
+    AMGCL_NS_Solver(Parameters rParameters)
     {
-        mfallback_to_gmres = false;
-        std::cout << "setting up AMGCL for iterative solve " << std::endl;
-        mTol = NewMaxTolerance;
-        mmax_it = NewMaxIterationsNumber;
-        mverbosity=verbosity;
+        Parameters default_parameters( R"(
+                                       {
+                                       "solver_type" : "amgcl_ns",
+                                       "verbosity" : 1,
+                                       "scaling": false,
+                                       "schur_variable" : "PRESSURE",
+                                       "inner_settings" : {
+                                            "solver": {
+                                                "type": "lgmres",
+                                                "M": 50,
+                                                "maxiter": 1000,
+                                                "tol": 1e-8,
+                                                "verbose": true
+                                            },
+                                            "precond": {
+                                                "pmask_size": -1,
+                                                "adjust_p": 0,
+                                                "type": 2,
+                                                "usolver": {
+                                                    "solver": {
+                                                        "type": "preonly"
+                                                    },
+                                                    "precond": {
+                                                        "relax": {
+                                                            "type": "ilup"
+                                                        },
+                                                        "coarsening": {
+                                                            "type": "aggregation",
+                                                            "aggr": {
+                                                                "eps_strong": 0
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                "psolver": {
+                                                    "solver": {
+                                                        "type": "preonly"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                   }  )" );
+
+
+        //now validate agains defaults -- this also ensures no type mismatch
+        rParameters.ValidateAndAssignDefaults(default_parameters);
+
+        //kratos specific settings
+        mTol = rParameters["inner_settings"]["solver"]["tol"].GetDouble();
+        mVerbosity=rParameters["verbosity"].GetInt();
         mndof = 1;
 
-        //choose smoother
-//         switch(smoother)
-//         {
-//         case SPAI0:
-//             mrelaxation = amgcl::runtime::relaxation::spai0;
-//             break;
-//         case ILU0:
-//             mrelaxation = amgcl::runtime::relaxation::ilu0;
-//             break;
-//         case DAMPED_JACOBI:
-//             mrelaxation = amgcl::runtime::relaxation::damped_jacobi;
-//             break;
-//         case GAUSS_SEIDEL:
-//             mrelaxation = amgcl::runtime::relaxation::gauss_seidel;
-//             break;
-//         case CHEBYSHEV:
-//             mrelaxation = amgcl::runtime::relaxation::chebyshev;
-//             break;
-//         };
-// 
-//         switch(solver)
-//         {
-//         case GMRES:
-//             miterative_solver = amgcl::runtime::solver::gmres;
-//             break;
-//         case BICGSTAB:
-//             miterative_solver = amgcl::runtime::solver::bicgstab;
-//             break;
-//         case CG:
-//             miterative_solver = amgcl::runtime::solver::cg;
-//             break;
-//         case BICGSTAB2:
-//             miterative_solver = amgcl::runtime::solver::bicgstabl;
-//             break;
-//         case BICGSTAB_WITH_GMRES_FALLBACK:
-//         {
-//             mfallback_to_gmres=true;
-//             miterative_solver = amgcl::runtime::solver::bicgstab;
-//             break;
-//         }
-//         };
-// 
-//         switch(coarsening)
-//         {
-//         case RUGE_STUBEN:
-//             mcoarsening = amgcl::runtime::coarsening::ruge_stuben;
-//             break;
-//         case AGGREGATION:
-//             mcoarsening = amgcl::runtime::coarsening::aggregation;
-//             break;
-//         case SA:
-//             mcoarsening = amgcl::runtime::coarsening::smoothed_aggregation;
-//             break;
-//         case SA_EMIN:
-//             mcoarsening = amgcl::runtime::coarsening::smoothed_aggr_emin;
-//             break;
-// 
-//         };
-
+        //pass settings to amgcl
+        std::stringstream inner_settings;
+        inner_settings << rParameters["inner_settings"].PrettyPrintJsonString() << std::endl;
+        //KRATOS_WATCH(inner_settings)
+        boost::property_tree::read_json(inner_settings, mprm);
     }
 
     /**
      * Destructor
      */
-    virtual ~AMGCL_NS_Solver() {};
+    ~AMGCL_NS_Solver() override {};
 
     /**
      * Normal solve method.
@@ -157,49 +139,127 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB)
+    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB) override
     {
-        //set block size
-//         mprm.put("coarsening.aggr.eps_strong",0.0);
-//         //mprm.put("amg.coarsening.aggr.block_size",mndof);
-//         mprm.put("tol", mTol);
-//         mprm.put("maxiter", mmax_it);
-// 
-//         //construct the mask of pressure
-//         pmask pressure_mask(mp);
-// 
-//         typedef amgcl::preconditioner::simple<
-//             amgcl::backend::builtin<double>,
-//             amgcl::coarsening::smoothed_aggregation,
-//             amgcl::relaxation::spai0
-//             > PrecondType;
-//         typedef amgcl::solver::gmres< amgcl::backend::builtin<double> > SolverType;
-//         
-//         
-// 
-//         size_t iters;
-//         double resid;
-//         {
-//             //please do not remove this parenthesis!
-//             PrecondType P(amgcl::backend::map(rA), pressure_mask, mprm);
-//             SolverType  S(rA.size1(), mprm);
-//             boost::tie(iters, resid)  = S(P.system_matrix(), P, rB, rX);
-//         } //please do not remove this parenthesis!
-// 
-// 
-//         if(mverbosity > 0)
-//         {
-// 
-//             std::cout << "Iterations: " << iters << std::endl
-//                       << "Error: " << resid << std::endl
-//                       << std::endl;
-//         }
-// 
-         bool is_solved = true;
-//         if(resid > mTol)
-//             is_solved = false;
+        mprm.put("precond.pmask", static_cast<void*>(&mp[0]));
+        mprm.put("precond.pmask_size", mp.size());
+        mprm.put("solver.verbose", mVerbosity > 1);
+
+        if(mVerbosity > 1)
+            write_json(std::cout, mprm);
+
+        if(mVerbosity == 4)
+        {
+            //output to matrix market
+            std::stringstream matrix_market_name;
+            matrix_market_name << "A" <<  ".mm";
+            TSparseSpaceType::WriteMatrixMarketMatrix((char*) (matrix_market_name.str()).c_str(), rA, false);
+
+            std::stringstream matrix_market_vectname;
+            matrix_market_vectname << "b" << ".mm.rhs";
+            TSparseSpaceType::WriteMatrixMarketVector((char*) (matrix_market_vectname.str()).c_str(), rB);
+
+            KRATOS_THROW_ERROR(std::logic_error, "verbosity = 4 prints the matrix and exits","")
+        }
+
+        size_t iters;
+        double resid;
+
+        switch (mndof)
+        {
+            case 3:
+                std::tie(iters, resid) = block_solve<2>(rA, rX, rB);
+                break;
+            case 4:
+                std::tie(iters, resid) = block_solve<3>(rA, rX, rB);
+                break;
+            default:
+                std::tie(iters, resid) = scalar_solve(rA, rX, rB);
+        }
+
+        if(mTol < resid)
+            std::cout << "AMGCL NS Linear Solver: Non converged linear solution. " << resid << std::endl;
+
+        if(mVerbosity > 1)
+        {
+            std::cout << "Iterations: " << iters << std::endl
+                      << "Error: " << resid << std::endl
+                      << std::endl;
+        }
+
+        bool is_solved = true;
+        if(resid > mTol)
+            is_solved = false;
 
         return is_solved;
+    }
+
+    std::tuple<size_t, double> scalar_solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB) const
+    {
+        typedef amgcl::backend::builtin<double> sBackend;
+        typedef amgcl::backend::builtin<float> pBackend;
+
+        typedef amgcl::make_solver<
+            amgcl::runtime::preconditioner<pBackend>,
+            amgcl::runtime::solver::wrapper<pBackend>
+            > USolver;
+
+        typedef amgcl::make_solver<
+            amgcl::runtime::preconditioner<pBackend>,
+            amgcl::runtime::solver::wrapper<pBackend>
+            > PSolver;
+
+        typedef amgcl::make_solver<
+            amgcl::preconditioner::schur_pressure_correction<USolver, PSolver>,
+            amgcl::runtime::solver::wrapper<sBackend>
+            > Solver;
+
+        auto pA = amgcl::adapter::zero_copy(
+                rA.size1(),
+                rA.index1_data().begin(),
+                rA.index2_data().begin(),
+                rA.value_data().begin()
+                );
+
+        Solver solve(*pA, mprm);
+        if(mVerbosity > 1) std::cout << "AMGCL NS Solver, AMGCL-NS Memory Occupation : " << amgcl::human_readable_memory(amgcl::backend::bytes(solve)) << std::endl;
+        return solve(*pA, rB, rX);
+    }
+
+    template <int UBlockSize>
+    std::tuple<size_t, double> block_solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB) const
+    {
+        typedef amgcl::static_matrix<float,UBlockSize,UBlockSize> fblock;
+
+        typedef amgcl::backend::builtin<double> sBackend;
+        typedef amgcl::backend::builtin<fblock> uBackend;
+        typedef amgcl::backend::builtin<float>  pBackend;
+
+        typedef amgcl::make_block_solver<
+            amgcl::runtime::preconditioner<uBackend>,
+            amgcl::runtime::solver::wrapper<uBackend>
+            > USolver;
+
+        typedef amgcl::make_solver<
+            amgcl::runtime::preconditioner<pBackend>,
+            amgcl::runtime::solver::wrapper<pBackend>
+            > PSolver;
+
+        typedef amgcl::make_solver<
+            amgcl::preconditioner::schur_pressure_correction<USolver, PSolver>,
+            amgcl::runtime::solver::wrapper<sBackend>
+            > Solver;
+
+        auto pA = amgcl::adapter::zero_copy(
+                rA.size1(),
+                rA.index1_data().begin(),
+                rA.index2_data().begin(),
+                rA.value_data().begin()
+                );
+
+        Solver solve(*pA, mprm);
+        if(mVerbosity > 1) std::cout << "AMGCL NS Solver: AMGCL-NS Memory Occupation : " << amgcl::human_readable_memory(amgcl::backend::bytes(solve)) << std::endl;
+        return solve(*pA, rB, rX);
     }
 
     /**
@@ -210,7 +270,7 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB)
+    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB) override
     {
         return false;
 
@@ -219,15 +279,15 @@ public:
     /**
      * Print information about this object.
      */
-    void  PrintInfo(std::ostream& rOStream) const
+    void  PrintInfo(std::ostream& rOStream) const override
     {
-        rOStream << "AMGCL solver finished.";
+        rOStream << "AMGCL NS Solver finished.";
     }
 
     /**
      * Print object's data.
      */
-    void  PrintData(std::ostream& rOStream) const
+    void  PrintData(std::ostream& rOStream) const override
     {
     }
 
@@ -237,7 +297,7 @@ public:
      * which require knowledge on the spatial position of the nodes associated to a given dof.
      * This function tells if the solver requires such data
      */
-    virtual bool AdditionalPhysicalDataIsNeeded()
+    bool AdditionalPhysicalDataIsNeeded() override
     {
         return true;
     }
@@ -252,69 +312,113 @@ public:
         SparseMatrixType& rA,
         VectorType& rX,
         VectorType& rB,
-        typename ModelPart::DofsArrayType& rdof_set,
-        ModelPart& r_model_part
-    )
+        typename ModelPart::DofsArrayType& rDofSet,
+        ModelPart& rModelPart
+    ) override
     {
+        //*****************************
+        //compute block size
         int old_ndof = -1;
-        unsigned int old_node_id = rdof_set.begin()->Id();
         int ndof=0;
-        
+        if (rModelPart.GetCommunicator().TotalProcesses() > 1)
+        {
+            unsigned int old_node_id = rDofSet.size() ? rDofSet.begin()->Id() : 0;
+            for (auto it = rDofSet.begin(); it!=rDofSet.end(); it++) {
+                if(it->EquationId() < TSparseSpaceType::Size1(rA) ) {
+                    IndexType id = it->Id();
+                    if(id != old_node_id) {
+                        old_node_id = id;
+                        if(old_ndof == -1) old_ndof = ndof;
+                        else if(old_ndof != ndof) { //if it is different than the block size is 1
+                            old_ndof = -1;
+                            break;
+                        }
+
+                        ndof=1;
+                    } else {
+                        ndof++;
+                    }
+                }
+            }
+
+            if(old_ndof == -1)
+                mndof = 1;
+            else
+                mndof = ndof;
+
+        }
+        else //distribute
+        {
+            const std::size_t system_size = TSparseSpaceType::Size1(rA);
+            int current_rank = rModelPart.GetCommunicator().MyPID();
+            unsigned int old_node_id = rDofSet.size() ? rDofSet.begin()->Id() : 0;
+            for (auto it = rDofSet.begin(); it!=rDofSet.end(); it++) {
+                if(it->EquationId() < system_size  && it->GetSolutionStepValue(PARTITION_INDEX) == current_rank) {
+                    IndexType id = it->Id();
+                    if(id != old_node_id) {
+                        old_node_id = id;
+                        if(old_ndof == -1) old_ndof = ndof;
+                        else if(old_ndof != ndof) { //if it is different than the block size is 1
+                            old_ndof = -1;
+                            break;
+                        }
+
+                        ndof=1;
+                    } else {
+                        ndof++;
+                    }
+                }
+            }
+
+            if(old_ndof != -1)
+                mndof = ndof;
+
+            int max_block_size = rModelPart.GetCommunicator().MaxAll(mndof);
+
+            if( old_ndof == -1) {
+                mndof = max_block_size;
+            }
+
+            KRATOS_ERROR_IF(mndof != max_block_size) << "Block size is not consistent. Local: " << mndof  << " Max: " << max_block_size << std::endl;
+        }
+
+        if(mVerbosity > 1) std::cout << "AMGCL NS Solver: mndof: " << mndof << std::endl;
+
+        // if(mProvideCoordinates) {
+        //     mCoordinates.resize(TSparseSpaceType::Size1(rA)/mndof);
+        //     unsigned int i=0;
+        //     for (auto it_dof = rDofSet.begin(); it_dof!=rDofSet.end(); it_dof+=mndof) {
+        //         if(it_dof->EquationId() < TSparseSpaceType::Size1(rA) ) {
+        //             auto it_node = rModelPart.Nodes().find(it_dof->Id());
+        //             mCoordinates[ i ] = it_node->Coordinates();
+        //             i++;
+        //         }
+        //     }
+        // }
+
+
+        //*****************************
+        //compute pressure mask
         if(mp.size() != rA.size1()) mp.resize( rA.size1() );
-         
-        for (ModelPart::DofsArrayType::iterator it = rdof_set.begin(); it!=rdof_set.end(); it++)
+        for (ModelPart::DofsArrayType::iterator it = rDofSet.begin(); it!=rDofSet.end(); it++)
         {
             const unsigned int eq_id = it->EquationId();
             if( eq_id < rA.size1() )
             {
-                unsigned int id = it->Id();
-                if(id != old_node_id)
-                {
-                    old_node_id = id;
-                    if(old_ndof == -1) old_ndof = ndof;
-                    else if(old_ndof != ndof) //if it is different than the block size is 1
-                    {
-                        old_ndof = -1;
-                        break;
-                    }
-
-                    ndof=1;
-                }
-                else
-                {
-                    ndof++;
-                }
-                
                 mp[eq_id]  = (it->GetVariable().Key() == PRESSURE);
             }
         }
 
-        if(old_ndof == -1)
-            mndof = 1;
-        else
-            mndof = ndof;
-
-        if(mverbosity > 0)
-        {
-                KRATOS_WATCH(mndof);
-        }
 
     }
 
 private:
 
     double mTol;
-    unsigned int mmax_it;
-    int mverbosity;
+    int mVerbosity;
     int mndof;
-    unsigned int mgmres_size;
-    bool mfallback_to_gmres;
-    std::vector< bool > mp;
+    std::vector< char > mp;
 
-
-    amgcl::runtime::coarsening::type mcoarsening;
-    amgcl::runtime::relaxation::type mrelaxation;
-    amgcl::runtime::solver::type miterative_solver;
     boost::property_tree::ptree mprm;
 
     /**
@@ -354,8 +458,6 @@ inline std::ostream& operator << (std::ostream& rOStream,
 
     return rOStream;
 }
-
-//#undef MPI_COMM_WORLD
 
 }  // namespace Kratos.
 

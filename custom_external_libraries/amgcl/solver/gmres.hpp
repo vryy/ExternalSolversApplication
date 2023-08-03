@@ -4,7 +4,7 @@
 /*
 The MIT License
 
-Copyright (c) 2012-2016 Denis Demidov <dennis.demidov@gmail.com>
+Copyright (c) 2012-2022 Denis Demidov <dennis.demidov@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -32,14 +32,15 @@ THE SOFTWARE.
  */
 
 #include <vector>
+#include <algorithm>
 #include <cmath>
-
-#include <boost/multi_array.hpp>
-#include <boost/tuple/tuple.hpp>
-#include <boost/range/algorithm.hpp>
+#include <tuple>
+#include <iostream>
 
 #include <amgcl/backend/interface.hpp>
 #include <amgcl/solver/detail/default_inner_product.hpp>
+#include <amgcl/solver/detail/givens_rotations.hpp>
+#include <amgcl/solver/precond_side.hpp>
 #include <amgcl/util.hpp>
 
 namespace amgcl {
@@ -70,31 +71,57 @@ class gmres {
         /// Solver parameters.
         struct params {
             /// Number of iterations before restart.
-            int M;
+            unsigned M;
+
+            /// Preconditioning kind (left/right).
+            preconditioner::side::type pside;
 
             /// Maximum number of iterations.
-            size_t maxiter;
+            unsigned maxiter;
 
-            /// Target residual error.
+            /// Target relative residual error.
             scalar_type tol;
 
-            params(int M = 50, size_t maxiter = 100, scalar_type tol = 1e-8)
-                : M(M), maxiter(maxiter), tol(tol)
-            {
-                precondition(M > 0, "M in GMRES(M) should be >=1");
-            }
+            /// Target absolute residual error.
+            scalar_type abstol;
 
+            /// Ignore the trivial solution x=0 when rhs is zero.
+            //** Useful for searching for the null-space vectors of the system */
+            bool ns_search;
+
+            /// Verbose output (show iterations and error)
+            bool verbose;
+
+            params()
+                : M(30), pside(preconditioner::side::right), maxiter(100), tol(1e-8),
+                  abstol(std::numeric_limits<scalar_type>::min()), ns_search(false),
+                  verbose(false)
+            { }
+
+#ifndef AMGCL_NO_BOOST
             params(const boost::property_tree::ptree &p)
                 : AMGCL_PARAMS_IMPORT_VALUE(p, M),
+                  AMGCL_PARAMS_IMPORT_VALUE(p, pside),
                   AMGCL_PARAMS_IMPORT_VALUE(p, maxiter),
-                  AMGCL_PARAMS_IMPORT_VALUE(p, tol)
-            {}
+                  AMGCL_PARAMS_IMPORT_VALUE(p, tol),
+                  AMGCL_PARAMS_IMPORT_VALUE(p, abstol),
+                  AMGCL_PARAMS_IMPORT_VALUE(p, ns_search),
+                  AMGCL_PARAMS_IMPORT_VALUE(p, verbose)
+            {
+                check_params(p, {"M", "pside", "maxiter", "tol", "abstol",
+                        "ns_search", "verbose"});
+            }
 
             void get(boost::property_tree::ptree &p, const std::string &path) const {
                 AMGCL_PARAMS_EXPORT_VALUE(p, path, M);
+                AMGCL_PARAMS_EXPORT_VALUE(p, path, pside);
                 AMGCL_PARAMS_EXPORT_VALUE(p, path, maxiter);
                 AMGCL_PARAMS_EXPORT_VALUE(p, path, tol);
+                AMGCL_PARAMS_EXPORT_VALUE(p, path, abstol);
+                AMGCL_PARAMS_EXPORT_VALUE(p, path, ns_search);
+                AMGCL_PARAMS_EXPORT_VALUE(p, path, verbose);
             }
+#endif
         };
 
         /// Preallocates necessary data structures for the system of size \p n.
@@ -105,20 +132,19 @@ class gmres {
                 const InnerProduct &inner_product = InnerProduct()
              )
             : prm(prm), n(n),
-              H(boost::extents[prm.M + 1][prm.M]),
-              s(prm.M + 1), cs(prm.M + 1), sn(prm.M + 1), y(prm.M + 1),
+              H(prm.M + 1, prm.M),
+              s(prm.M + 1), cs(prm.M + 1), sn(prm.M + 1),
               r( Backend::create_vector(n, backend_prm) ),
-              w( Backend::create_vector(n, backend_prm) ),
               inner_product(inner_product)
         {
             v.reserve(prm.M + 1);
-            for(int i = 0; i <= prm.M; ++i)
+            for(unsigned i = 0; i <= prm.M; ++i)
                 v.push_back( Backend::create_vector(n, backend_prm) );
         }
 
         /* Computes the solution for the given system matrix \p A and the
          * right-hand side \p rhs.  Returns the number of iterations made and
-         * the achieved residual as a ``boost::tuple``. The solution vector
+         * the achieved residual as a ``std::tuple``. The solution vector
          * \p x provides initial approximation in input and holds the computed
          * solution on output.
          *
@@ -129,53 +155,120 @@ class gmres {
          * good preconditioner for several subsequent time steps [DeSh12]_.
          */
         template <class Matrix, class Precond, class Vec1, class Vec2>
-        boost::tuple<size_t, scalar_type> operator()(
+        std::tuple<size_t, scalar_type> operator()(
                 Matrix  const &A,
                 Precond const &P,
                 Vec1    const &rhs,
                 Vec2          &x
                 ) const
         {
-            size_t iter = 0;
+            namespace side = preconditioner::side;
+
+            static const scalar_type zero = math::zero<scalar_type>();
+            static const scalar_type one  = math::identity<scalar_type>();
+
+            ios_saver ss(std::cout);
 
             scalar_type norm_rhs = norm(rhs);
-            if (norm_rhs < amgcl::detail::eps<scalar_type>(n)) {
-                backend::clear(x);
-                return boost::make_tuple(0, norm_rhs);
+            if (norm_rhs < amgcl::detail::eps<scalar_type>(1)) {
+                if (prm.ns_search) {
+                    norm_rhs = math::identity<scalar_type>();
+                } else {
+                    backend::clear(x);
+                    return std::make_tuple(0, norm_rhs);
+                }
             }
 
-            scalar_type eps = prm.tol * norm_rhs;
+            scalar_type eps = std::max(prm.tol * norm_rhs, prm.abstol);
+            scalar_type norm_r = zero;
 
-            scalar_type res_norm = restart(A, rhs, P, x);
-            if (res_norm < eps)
-                return boost::make_tuple(0, res_norm / norm_rhs);
-
-            do {
-                for(int i = 0; i < prm.M && iter < prm.maxiter; ++i, ++iter) {
-                    res_norm = iteration(A, P, i);
-
-                    if (res_norm < eps) {
-                        update(x, i);
-                        return boost::make_tuple(iter + 1, res_norm / norm_rhs);
-                    };
+            size_t iter = 0;
+            while(true) {
+                if (prm.pside == side::left) {
+                    backend::residual(rhs, A, x, *v[0]);
+                    P.apply(*v[0], *r);
+                } else {
+                    backend::residual(rhs, A, x, *r);
                 }
 
-                update(x, prm.M-1);
-                res_norm = restart(A, rhs, P, x);
-            } while (iter < prm.maxiter && res_norm > eps);
+                // -- Check stopping condition
+                norm_r = norm(*r);
+                if (norm_r < eps || iter >= prm.maxiter) break;
 
-            return boost::make_tuple(iter, res_norm / norm_rhs);
+                // -- Inner GMRES iteration
+                backend::axpby(math::inverse(norm_r), *r, zero, *v[0]);
+
+                std::fill(s.begin(), s.end(), 0);
+                s[0] = norm_r;
+
+                unsigned j = 0;
+                while(true) {
+                    // -- Arnoldi process
+                    //
+                    // Build an orthonormal basis V and matrix H such that
+                    //     A V_{i-1} = V_{i} H
+                    vector &v_new = *v[j+1];
+
+                    preconditioner::spmv(prm.pside, P, A, *v[j], v_new, *r);
+
+                    for(unsigned k = 0; k <= j; ++k) {
+                        H(k, j) = inner_product(v_new, *v[k]);
+                        backend::axpby(-H(k, j), *v[k], one, v_new);
+                    }
+                    H(j+1, j) = norm(v_new);
+
+                    backend::axpby(math::inverse(H(j+1, j)), v_new, zero, v_new);
+
+                    for(unsigned k = 0; k < j; ++k)
+                        detail::apply_plane_rotation(H(k, j), H(k+1, j), cs[k], sn[k]);
+
+                    detail::generate_plane_rotation(H(j, j), H(j+1, j), cs[j], sn[j]);
+                    detail::apply_plane_rotation(H(j, j), H(j+1, j), cs[j], sn[j]);
+                    detail::apply_plane_rotation(s[j], s[j+1], cs[j], sn[j]);
+
+                    scalar_type inner_res = std::abs(s[j+1]);
+
+                    if (prm.verbose && iter % 5 == 0)
+                        std::cout << iter << "\t" << std::scientific << inner_res / norm_rhs << std::endl;
+
+                    // Check for termination
+                    ++j, ++iter;
+                    if (iter >= prm.maxiter || j >= prm.M || inner_res <= eps)
+                        break;
+                }
+
+                // -- GMRES terminated: eval solution
+                for (unsigned i = j; i --> 0; ) {
+                    s[i] /= H(i, i);
+                    for (unsigned k = 0; k < i; ++k)
+                        s[k] -= H(k, i) * s[i];
+                }
+
+                // -- Apply step
+                vector &dx = *r;
+                backend::lin_comb(j, s, v, zero, dx);
+
+                if (prm.pside == side::left) {
+                    backend::axpby(one, dx, one, x);
+                } else {
+                    vector &tmp = *v[0];
+                    P.apply(dx, tmp);
+                    backend::axpby(one, tmp, one, x);
+                }
+            }
+
+            return std::make_tuple(iter, norm_r / norm_rhs);
         }
 
         /* Computes the solution for the given right-hand side \p rhs. The
          * system matrix is the same that was used for the setup of the
          * preconditioner \p P.  Returns the number of iterations made and the
-         * achieved residual as a ``boost::tuple``. The solution vector \p x
+         * achieved residual as a ``std::tuple``. The solution vector \p x
          * provides initial approximation in input and holds the computed
          * solution on output.
          */
         template <class Precond, class Vec1, class Vec2>
-        boost::tuple<size_t, scalar_type> operator()(
+        std::tuple<size_t, scalar_type> operator()(
                 Precond const &P,
                 Vec1    const &rhs,
                 Vec2          &x
@@ -184,108 +277,42 @@ class gmres {
             return (*this)(P.system_matrix(), P, rhs, x);
         }
 
+        friend std::ostream& operator<<(std::ostream &os, const gmres &s) {
+            return os
+                << "Type:             GMRES(" << s.prm.M << ")"
+                << "\nUnknowns:         " << s.n
+                << "\nMemory footprint: " << human_readable_memory(s.bytes())
+                << std::endl;
+        }
     public:
         params prm;
 
+        size_t bytes() const {
+            size_t b = 0;
+
+            b += H.size() * sizeof(coef_type);
+            b += backend::bytes(s);
+            b += backend::bytes(cs);
+            b += backend::bytes(sn);
+            b += backend::bytes(*r);
+
+            for(const auto &x : v) b += backend::bytes(*x);
+
+            return b;
+        }
     private:
         size_t n;
 
-        mutable boost::multi_array<coef_type, 2> H;
-        mutable std::vector<coef_type> s, cs, sn, y;
-        boost::shared_ptr<vector> r, w;
-        std::vector< boost::shared_ptr<vector> > v;
+        mutable multi_array<coef_type, 2> H;
+        mutable std::vector<coef_type> s, cs, sn;
+        std::shared_ptr<vector> r;
+        std::vector< std::shared_ptr<vector> > v;
 
         InnerProduct inner_product;
 
         template <class Vec>
         scalar_type norm(const Vec &x) const {
             return std::abs(sqrt(inner_product(x, x)));
-        }
-
-        static void apply_plane_rotation(
-                coef_type &dx, coef_type &dy, coef_type cs, coef_type sn
-                )
-        {
-            coef_type tmp = cs * dx + sn * dy;
-            dy = -sn * dx + cs * dy;
-            dx = tmp;
-        }
-
-        static void generate_plane_rotation(
-                coef_type dx, coef_type dy, coef_type &cs, coef_type &sn
-                )
-        {
-            if (math::is_zero(dy)) {
-                cs = 1;
-                sn = 0;
-            } else if (std::abs(dy) > std::abs(dx)) {
-                coef_type tmp = dx / dy;
-                sn = math::inverse(sqrt(math::identity<coef_type>() + tmp * tmp));
-                cs = tmp * sn;
-            } else {
-                coef_type tmp = dy / dx;
-                cs = math::inverse(sqrt(math::identity<coef_type>() + tmp * tmp));
-                sn = tmp * cs;
-            }
-        }
-
-        template <class Vec>
-        void update(Vec &x, int k) const {
-            boost::range::copy(s, y.begin());
-
-            for (int i = k; i >= 0; --i) {
-                y[i] /= H[i][i];
-                for (int j = i - 1; j >= 0; --j)
-                    y[j] -= H[j][i] * y[i];
-            }
-
-            // Unroll the loop
-            int j = 0;
-            for (; j + 1 <= k; j += 2)
-                backend::axpbypcz(y[j], *v[j], y[j+1], *v[j+1], math::identity<scalar_type>(), x);
-            for (; j <= k; ++j)
-                backend::axpby(y[j], *v[j], math::identity<scalar_type>(), x);
-        }
-
-        template <class Matrix, class Precond, class Vec1, class Vec2>
-        scalar_type restart(const Matrix &A, const Vec1 &rhs,
-                const Precond &P, const Vec2 &x) const
-        {
-            backend::residual(rhs, A, x, *w);
-            P.apply(*w, *r);
-
-            boost::fill(s, 0);
-            s[0] = norm(*r);
-
-            if (!math::is_zero(s[0]))
-                backend::axpby(math::inverse(s[0]), *r, math::zero<scalar_type>(), *v[0]);
-
-            return std::abs(s[0]);
-        }
-
-        template <class Matrix, class Precond>
-        scalar_type iteration(const Matrix &A, const Precond &P, int i) const
-        {
-            backend::spmv(math::identity<scalar_type>(), A, *v[i], math::zero<scalar_type>(), *r);
-            P.apply(*r, *w);
-
-            for(int k = 0; k <= i; ++k) {
-                H[k][i] = inner_product(*w, *v[k]);
-                backend::axpby(-H[k][i], *v[k], math::identity<scalar_type>(), *w);
-            }
-
-            H[i+1][i] = norm(*w);
-
-            backend::axpby(math::inverse(H[i+1][i]), *w, math::zero<scalar_type>(), *v[i+1]);
-
-            for(int k = 0; k < i; ++k)
-                apply_plane_rotation(H[k][i], H[k+1][i], cs[k], sn[k]);
-
-            generate_plane_rotation(H[i][i], H[i+1][i], cs[i], sn[i]);
-            apply_plane_rotation(H[i][i], H[i+1][i], cs[i], sn[i]);
-            apply_plane_rotation(s[i], s[i+1], cs[i], sn[i]);
-
-            return std::abs(s[i+1]);
         }
 };
 
