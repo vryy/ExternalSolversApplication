@@ -128,9 +128,11 @@ void  AddLinearSolversToPython()
 
     typedef AMGCLSolver<SpaceType,  LocalSpaceType> AMGCLSolverType;
     class_<AMGCLSolverType, bases<LinearSolverType>, boost::noncopyable >
-    ( "AMGCLSolver",init<AMGCLSmoother,AMGCLIterativeSolverType,double,int,int,int>() )
-    .def(init<AMGCLSmoother,AMGCLIterativeSolverType,AMGCLCoarseningType ,double,int,int,int, bool>())
+    ( "AMGCLSolver", init<AMGCLSmoother,AMGCLIterativeSolverType,double,int,int,int>() )
+    .def(init<AMGCLSmoother, AMGCLIterativeSolverType, AMGCLCoarseningType, double, int, int, int, bool>())
     .def(init<Parameters&>())
+    .def("AdditionalPhysicalDataIsNeeded", &AMGCLSolverType::AdditionalPhysicalDataIsNeeded)
+    .def("ProvideAdditionalData", &AMGCLSolverType::ProvideAdditionalData)
     ;
 
    // typedef AMGCL_NS_Solver<SpaceType,  LocalSpaceType> AMGCL_NS_SolverType;
