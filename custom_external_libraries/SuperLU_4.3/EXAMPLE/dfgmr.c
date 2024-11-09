@@ -35,7 +35,8 @@ For information on ITSOL contact saad@cs.umn.edu
 
 extern double ddot_(int *, double [], int *, double [], int *);
 extern double dnrm2_(int *, double [], int *);
-
+extern int dcopy_(int *, double *, int *, double *, int *);
+extern int daxpy_(int *, double *, double *, int *, double *, int *);
 
 int dfgmr(int n,
      void (*dmatvec) (double, double[], double, double[]),

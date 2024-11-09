@@ -15,6 +15,8 @@
  */
 #include "slu_Cnames.h"
 
+int xerbla_(char *, int *);
+
 /*! \brief
 
  <pre>

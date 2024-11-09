@@ -11,4 +11,3 @@ endif()
 
 message("**** finish configuring KratosExternalSolversApplication ****")
 message("")
-
