@@ -10,11 +10,10 @@
 
 #if defined(KRATOS_PYTHON)
 // External includes
-#include <boost/python.hpp>
 
 
 // Project includes
-#include "includes/define.h"
+#include "includes/define_python.h"
 #include "externalsolvers_application.h"
 #include "custom_python/add_linear_solvers_to_python.h"
 
@@ -25,12 +24,10 @@ namespace Kratos
 namespace Python
 {
 
-using namespace boost::python;
-
-
-
 BOOST_PYTHON_MODULE(KratosExternalSolversApplication)
 {
+
+    using namespace boost::python;
 
     class_<KratosExternalSolversApplication,
            KratosExternalSolversApplication::Pointer,
@@ -39,9 +36,7 @@ BOOST_PYTHON_MODULE(KratosExternalSolversApplication)
 
     AddLinearSolversToPython();
 
-
 }
-
 
 }  // namespace Python.
 
