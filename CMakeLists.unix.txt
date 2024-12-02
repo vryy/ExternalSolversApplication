@@ -1,34 +1,33 @@
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-message("**** configuring KratosExternalSolversApplication ****")
-
 if(${INCLUDE_PASTIX} MATCHES ON)
     set(${EXCLUDE_ITSOL} ON)
     message("************************** ITSOL NOT COMPILED AS IT IS INCOMPATIBLE WITH PASTIX **************** ")
-endif(${INCLUDE_PASTIX} MATCHES ON)
-
-
-
+endif()
 
 include_directories( ${CMAKE_SOURCE_DIR}/kratos )
-include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/custom_external_libraries/SuperLU_4.3 )
 include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/custom_external_libraries )
 
-# ##add subdirectories for compilation of dependent libraries
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/custom_external_libraries/SuperLU_4.3)
+# add subdirectories for compilation of dependent libraries
+option(ENABLE_SUPERLU "Enable the SuperLU solver" ON)
+if(${ENABLE_SUPERLU} MATCHES ON)
+    add_definitions(-DENABLE_SUPERLU)
+    include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/custom_external_libraries/SuperLU_4.3 )
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/custom_external_libraries/SuperLU_4.3)
+endif()
 
 if(${EXCLUDE_ITSOL} MATCHES ON)
     add_definitions(-DEXCLUDE_ITSOL)
-else(${EXCLUDE_ITSOL} MATCHES ON)
+else()
     #for ITSOL
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/custom_external_libraries/ITSOL_2)
     include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/custom_external_libraries/ITSOL_2 )
     include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/custom_external_libraries/ITSOL_2/INC  )
-endif(${EXCLUDE_ITSOL} MATCHES ON)
+endif()
 
 if(${EXCLUDE_AMGCL} MATCHES ON)
     add_definitions(-DEXCLUDE_AMGCL)
-endif(${EXCLUDE_AMGCL} MATCHES ON)
+endif()
 
 if(${INCLUDE_PASTIX} MATCHES ON)
     add_definitions(-DINCLUDE_PASTIX)
@@ -40,13 +39,10 @@ if(${INCLUDE_PASTIX} MATCHES ON)
     add_definitions( -DFORCE_NOMPI )
     add_library(kratos_pastix STATIC custom_external_libraries/solvePASTIX.c  )
     target_link_libraries(kratos_pastix  ${PASTIX_LINK_LIB} ${SCOTCH_LIB} ${SCOTCH_ERR_LIB} rt  ${BLAS_LIBRARIES} )
-
-        install(FILES ${SCOTCH_LIB} ${SCOTCH_ERR_LIB}   ${BLAS_LIBRARIES} DESTINATION libs )
-else(${INCLUDE_PASTIX} MATCHES ON)
+    install(FILES ${SCOTCH_LIB} ${SCOTCH_ERR_LIB}   ${BLAS_LIBRARIES} DESTINATION libs )
+else()
     set(PASTIX_LINK_LIB "")
-endif(${INCLUDE_PASTIX} MATCHES ON)
-
-
+endif()
 
 ## generate variables with the sources
 set( KRATOS_EXTERNAL_SOLVERS_APPLICATION_SOURCES
@@ -59,21 +55,25 @@ set( KRATOS_EXTERNAL_SOLVERS_APPLICATION_SOURCES
 # ###############################################################
 # ## define library Kratos which defines the basic python interface
 add_library(KratosExternalSolversApplication SHARED ${KRATOS_EXTERNAL_SOLVERS_APPLICATION_SOURCES})
+target_link_libraries(KratosExternalSolversApplication KratosCore)
+
+if(${ENABLE_SUPERLU} MATCHES ON)
+    target_link_libraries(KratosExternalSolversApplication superlu)
+endif()
 
 if(${EXCLUDE_ITSOL} MATCHES ON)
     if(${INCLUDE_PASTIX} MATCHES ON)
-        target_link_libraries(KratosExternalSolversApplication KratosCore superlu kratos_pastix rt)
-    else(${INCLUDE_PASTIX} MATCHES ON)
-        target_link_libraries(KratosExternalSolversApplication KratosCore superlu )
-    endif(${INCLUDE_PASTIX} MATCHES ON)
-else(${EXCLUDE_ITSOL} MATCHES ON)
+        target_link_libraries(KratosExternalSolversApplication kratos_pastix rt)
+    endif()
+else()
     if(${INCLUDE_PASTIX} MATCHES ON)
-        target_link_libraries(KratosExternalSolversApplication KratosCore superlu itsol_solvers kratos_pastix rt)
-    else(${INCLUDE_PASTIX} MATCHES ON)
-        target_link_libraries(KratosExternalSolversApplication KratosCore superlu itsol_solvers )
-    endif(${INCLUDE_PASTIX} MATCHES ON)
-endif(${EXCLUDE_ITSOL} MATCHES ON)
+        target_link_libraries(KratosExternalSolversApplication itsol_solvers kratos_pastix rt)
+    else()
+        target_link_libraries(KratosExternalSolversApplication itsol_solvers )
+    endif()
+endif()
 
+set_target_properties(KratosExternalSolversApplication PROPERTIES COMPILE_DEFINITIONS "EXTERNAL_SOLVERS_APPLICATION=EXPORT,API")
 set_target_properties(KratosExternalSolversApplication PROPERTIES PREFIX "")
 
 # changing the .dll suffix to .pyd

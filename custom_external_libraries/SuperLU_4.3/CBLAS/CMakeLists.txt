@@ -9,7 +9,12 @@ else()
   set(sources "")
 endif()
 
-#if (enable_single)
+set(enable_single ON)
+set(enable_double ON)
+set(enable_complex ON)
+set(enable_complex16 ON)
+
+if (enable_single)
     list(APPEND sources
       isamax.c
       sasum.c
@@ -26,9 +31,9 @@ endif()
       sger.c
       ssyr2.c
     )
-#endif()
+endif()
 
-#if (enable_double)
+if (enable_double)
     list(APPEND sources
       idamax.c
       dasum.c
@@ -45,9 +50,9 @@ endif()
       dger.c
       dsyr2.c
     )
-#endif()
+endif()
 
-#if (enable_complex)
+if (enable_complex)
     list(APPEND sources
       icamax.c
       scasum.c
@@ -63,9 +68,9 @@ endif()
       cgerc.c
       cher2.c
     )
-#endif()
+endif()
 
-#if (enable_complex16)
+if (enable_complex16)
     list(APPEND sources
       izamax.c
       dzasum.c
@@ -82,21 +87,6 @@ endif()
       zgerc.c
       zher2.c
     )
-#endif()
+endif()
 
 add_library(cblas ${sources})
-
-include(GNUInstallDirs)
-install(TARGETS blas
-  EXPORT blasTargets
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-)
-
-install(EXPORT blasTargets
-  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/superlu"
-  )
-export(EXPORT blasTargets
-  FILE "${CMAKE_CURRENT_BINARY_DIR}/blasTargets.cmake"
-  )

@@ -26,9 +26,12 @@
 #include "linear_solvers/direct_solver.h"
 #include "linear_solvers/iterative_solver.h"
 #include "linear_solvers/skyline_lu_factorization_solver.h"
-#include "external_includes/superlu_solver.h"
-#include "external_includes/superlu_iterative_solver.h"
 #include "external_includes/gmres_solver.h"
+
+#ifdef ENABLE_SUPERLU
+  #include "external_includes/superlu_solver.h"
+  #include "external_includes/superlu_iterative_solver.h"
+#endif
 
 #ifndef EXCLUDE_ITSOL
   #include "external_includes/itsol_arms_solver.h"
@@ -43,12 +46,12 @@
   #include "external_includes/amgcl_ns_solver.h"
 #endif
 
-
 namespace Kratos
 {
 
 namespace Python
 {
+
 void  AddLinearSolversToPython()
 {
     typedef UblasSpace<double, CompressedMatrix, Vector> SpaceType;
@@ -60,19 +63,19 @@ void  AddLinearSolversToPython()
     typedef DirectSolver<SpaceType,  LocalSpaceType> DirectSolverType;
     //typedef Reorderer<ParallelSpaceType,  ParallelLocalSpaceType > ParallelReordererType;
     //typedef DirectSolver<ParallelSpaceType,  ParallelLocalSpaceType, ParallelReordererType > ParallelDirectSolverType;
-    typedef SuperLUSolver<SpaceType,  LocalSpaceType> SuperLUSolverType;
-    typedef SuperLUIterativeSolver<SpaceType,  LocalSpaceType> SuperLUIterativeSolverType;
     typedef IterativeSolver<SpaceType, LocalSpaceType> IterativeSolverType;
     typedef GMRESSolver<SpaceType, LocalSpaceType> GMRESSolverType;
     typedef Preconditioner<SpaceType,  LocalSpaceType> PreconditionerType;
-
-
 
     using namespace boost::python;
 
     //***************************************************************************
     //linear solvers
     //***************************************************************************
+
+#ifdef ENABLE_SUPERLU
+    typedef SuperLUSolver<SpaceType,  LocalSpaceType> SuperLUSolverType;
+    typedef SuperLUIterativeSolver<SpaceType,  LocalSpaceType> SuperLUIterativeSolverType;
     class_<SuperLUSolverType, bases<DirectSolverType>, boost::noncopyable >
     ( "SuperLUSolver", init<>() )
     .def("AdditionalPhysicalDataIsNeeded", &SuperLUSolverType::AdditionalPhysicalDataIsNeeded)
@@ -83,6 +86,7 @@ void  AddLinearSolversToPython()
     ( "SuperLUIterativeSolver",init<>() )
     .def(init<double,int,int,double,double,double>())
     ;
+#endif
 
 #ifndef EXCLUDE_ITSOL
     typedef ITSOL_ARMS_Solver<SpaceType,  LocalSpaceType> ITSOL_ARMS_SolverType;
@@ -155,4 +159,3 @@ void  AddLinearSolversToPython()
 }  // namespace Python.
 
 } // Namespace Kratos
-

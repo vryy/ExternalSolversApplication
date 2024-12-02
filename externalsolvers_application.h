@@ -48,12 +48,12 @@ namespace Kratos
 
 ///@}
 ///@name Kratos Classes
-///@{
+///@
 
 /// Short class definition.
 /** Detail class definition.
 */
-class KratosExternalSolversApplication : public KratosApplication
+class KRATOS_API(EXTERNAL_SOLVERS_APPLICATION) KratosExternalSolversApplication : public KratosApplication
 {
 public:
     ///@name Type Definitions
@@ -71,7 +71,7 @@ public:
     KratosExternalSolversApplication() {}
 
     /// Destructor.
-    virtual ~KratosExternalSolversApplication() {}
+    ~KratosExternalSolversApplication() override {}
 
 
     ///@}
@@ -83,9 +83,7 @@ public:
     ///@name Operations
     ///@{
 
-    virtual void Register();
-
-
+    void Register() override;
 
     ///@}
     ///@name Access
@@ -102,20 +100,20 @@ public:
     ///@{
 
     /// Turn back information as a string.
-    virtual std::string Info() const
+    std::string Info() const override
     {
         return "KratosExternalSolversApplication";
     }
 
     /// Print information about this object.
-    virtual void PrintInfo(std::ostream& rOStream) const
+    void PrintInfo(std::ostream& rOStream) const override
     {
         rOStream << Info();
         PrintData(rOStream);
     }
 
     ///// Print object's data.
-    virtual void PrintData(std::ostream& rOStream) const
+    void PrintData(std::ostream& rOStream) const override
     {
         KRATOS_WATCH("in KratosALEApplication application");
         KRATOS_WATCH(KratosComponents<VariableData>::GetComponents().size() );
@@ -238,6 +236,4 @@ private:
 
 }  // namespace Kratos.
 
-#endif // KRATOS_ALE_APPLICATION_H_INCLUDED  defined 
-
-
+#endif // KRATOS_ALE_APPLICATION_H_INCLUDED  defined

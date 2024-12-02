@@ -340,8 +340,13 @@ public:
 
         //resubstitution of results
         #pragma omp parallel for
+#ifdef _MSC_VER
+        for (int j = 0; j < rB.size2(); ++j)
+            for (int i = 0; i < rB.size1(); ++i)
+#else
         for (unsigned int j = 0; j < rB.size2(); ++j)
             for (unsigned int i = 0; i < rB.size1(); ++i)
+#endif
                 rX(i, j) = dB[j*rB.size1()+i];
 
         //deallocate memory used
