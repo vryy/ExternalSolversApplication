@@ -30,6 +30,8 @@
 void dusolve(int, int, double*, double*);
 void dlsolve(int, int, double*, double*);
 void dmatvec(int, int, int, double*, double*, double*);
+int dtrsm_(char*, char*, char*, char*, int*, int*, double*, double*, int*, double*, int*);
+int dgemm_(char*, char*, int*, int*, int*, double*, double*, int*, double*, int*, double*, double*, int*);
 
 /*! \brief
  *

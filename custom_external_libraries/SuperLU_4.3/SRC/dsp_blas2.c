@@ -23,6 +23,7 @@ void dusolve(int, int, double*, double*);
 void dlsolve(int, int, double*, double*);
 void dmatvec(int, int, int, double*, double*, double*);
 int dtrsv_(char *uplo, char *trans, char *diag, int *n, double *a, int *lda, double *x, int *incx);
+int dgemv_(char*, int*, int*, double*, double*, int*, double*, int*, double*, double*, int*);
 
 /*! \brief Solves one of the systems of equations A*x = b,   or   A'*x = b
  * 
