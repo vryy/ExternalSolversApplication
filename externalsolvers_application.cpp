@@ -24,8 +24,6 @@ namespace Kratos
 
 void KratosExternalSolversApplication::Register()
 {
-    // calling base class register to register Kratos components
-    KratosApplication::Register();
     std::cout << "Initializing KratosExternalSolversApplication... " << std::endl;
 }
 
