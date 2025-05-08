@@ -19,6 +19,7 @@
 // Project includes
 #include "includes/define.h"
 #include "includes/kratos_parameters.h"
+#include "includes/model_part.h"
 #include "python/add_equation_systems_to_python.h"
 #include "spaces/ublas_space.h"
 //#include "spaces/parallel_ublas_space.h"
@@ -58,14 +59,14 @@ void  AddLinearSolversToPython()
     //      typedef ParallelUblasSpace<double, CompressedMatrix, Vector> ParallelSpaceType;
     typedef UblasSpace<double, Matrix, Vector> LocalSpaceType;
     // typedef UblasSpace<double, Matrix, Vector> ParallelLocalSpaceType;
-    typedef LinearSolver<SpaceType,  LocalSpaceType> LinearSolverType;
+    typedef LinearSolver<SpaceType, LocalSpaceType, ModelPart> LinearSolverType;
     //typedef LinearSolver<ParallelSpaceType,  ParallelLocalSpaceType> ParallelLinearSolverType;
-    typedef DirectSolver<SpaceType,  LocalSpaceType> DirectSolverType;
+    typedef DirectSolver<SpaceType, LocalSpaceType, ModelPart> DirectSolverType;
     //typedef Reorderer<ParallelSpaceType,  ParallelLocalSpaceType > ParallelReordererType;
     //typedef DirectSolver<ParallelSpaceType,  ParallelLocalSpaceType, ParallelReordererType > ParallelDirectSolverType;
-    typedef IterativeSolver<SpaceType, LocalSpaceType> IterativeSolverType;
-    typedef GMRESSolver<SpaceType, LocalSpaceType> GMRESSolverType;
-    typedef Preconditioner<SpaceType,  LocalSpaceType> PreconditionerType;
+    typedef IterativeSolver<SpaceType, LocalSpaceType, ModelPart> IterativeSolverType;
+    typedef GMRESSolver<SpaceType, LocalSpaceType, ModelPart> GMRESSolverType;
+    typedef Preconditioner<SpaceType, LocalSpaceType, ModelPart> PreconditionerType;
 
     using namespace boost::python;
 
@@ -74,8 +75,8 @@ void  AddLinearSolversToPython()
     //***************************************************************************
 
 #ifdef ENABLE_SUPERLU
-    typedef SuperLUSolver<SpaceType,  LocalSpaceType> SuperLUSolverType;
-    typedef SuperLUIterativeSolver<SpaceType,  LocalSpaceType> SuperLUIterativeSolverType;
+    typedef SuperLUSolver<SpaceType, LocalSpaceType, ModelPart> SuperLUSolverType;
+    typedef SuperLUIterativeSolver<SpaceType, LocalSpaceType, ModelPart> SuperLUIterativeSolverType;
     class_<SuperLUSolverType, bases<DirectSolverType>, boost::noncopyable >
     ( "SuperLUSolver", init<>() )
     .def("AdditionalPhysicalDataIsNeeded", &SuperLUSolverType::AdditionalPhysicalDataIsNeeded)
@@ -89,7 +90,7 @@ void  AddLinearSolversToPython()
 #endif
 
 #ifndef EXCLUDE_ITSOL
-    typedef ITSOL_ARMS_Solver<SpaceType,  LocalSpaceType> ITSOL_ARMS_SolverType;
+    typedef ITSOL_ARMS_Solver<SpaceType, LocalSpaceType, ModelPart> ITSOL_ARMS_SolverType;
     class_<ITSOL_ARMS_SolverType, bases<LinearSolverType>, boost::noncopyable >
     ( "ITSOL_ARMS_Solver",init<>() )
     .def(init<double,int,int>())
@@ -97,7 +98,7 @@ void  AddLinearSolversToPython()
 #endif
 
 #ifdef INCLUDE_PASTIX
-    typedef PastixSolver<SpaceType,  LocalSpaceType> PastixSolverType;
+    typedef PastixSolver<SpaceType, LocalSpaceType, ModelPart> PastixSolverType;
     class_<PastixSolverType, bases<LinearSolverType>, boost::noncopyable >
     ( "PastixSolver",init<int,bool>() )
     .def(init<double,int,int,int,bool>())
@@ -128,9 +129,7 @@ void  AddLinearSolversToPython()
     .value("SA_EMIN",SA_EMIN)
     ;
 
-
-
-    typedef AMGCLSolver<SpaceType,  LocalSpaceType> AMGCLSolverType;
+    typedef AMGCLSolver<SpaceType, LocalSpaceType, ModelPart> AMGCLSolverType;
     class_<AMGCLSolverType, bases<LinearSolverType>, boost::noncopyable >
     ( "AMGCLSolver", init<AMGCLSmoother,AMGCLIterativeSolverType,double,int,int,int>() )
     .def(init<AMGCLSmoother, AMGCLIterativeSolverType, AMGCLCoarseningType, double, int, int, int, bool>())
@@ -139,7 +138,7 @@ void  AddLinearSolversToPython()
     .def("ProvideAdditionalData", &AMGCLSolverType::ProvideAdditionalData)
     ;
 
-   // typedef AMGCL_NS_Solver<SpaceType,  LocalSpaceType> AMGCL_NS_SolverType;
+   // typedef AMGCL_NS_Solver<SpaceType, LocalSpaceType, ModelPart> AMGCL_NS_SolverType;
    // class_<AMGCL_NS_SolverType, bases<LinearSolverType>, boost::noncopyable >
    // ( "AMGCL_NS_Solver", init<AMGCLSmoother,AMGCLIterativeSolverType,AMGCLCoarseningType ,double,int,int,int>())
    // ;
@@ -150,7 +149,7 @@ void  AddLinearSolversToPython()
     ( "GMRESSolver")
     .def(init<double>())
     .def(init<double, unsigned int>())
-    .def(init<double, unsigned int,  PreconditionerType::Pointer>())
+    .def(init<double, unsigned int, PreconditionerType::Pointer>())
     .def(self_ns::str(self))
     ;
 

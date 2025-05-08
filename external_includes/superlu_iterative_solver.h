@@ -3,10 +3,10 @@
 * kkkk   kkkk  kkkkkkkkkk   kkkkk    kkkkkkkkkk kkkkkkkkkk kkkkkkkkkK    *
 * kkkk  kkkk   kkkk   kkkk  kkkkkk   kkkkkkkkkk kkkkkkkkkk kkkkkkkkkK    *
 * kkkkkkkkk    kkkk   kkkk  kkkkkkk     kkkk    kkk    kkk  kkkk         *
-* kkkkkkkkk    kkkkkkkkkkk  kkkk kkk	kkkk    kkk    kkk    kkkk       *
+* kkkkkkkkk    kkkkkkkkkkk  kkkk kkk    kkkk    kkk    kkk    kkkk       *
 * kkkk  kkkk   kkkk  kkkk   kkkk kkkk   kkkk    kkk    kkk      kkkk     *
 * kkkk   kkkk  kkkk   kkkk  kkkk  kkkk  kkkk    kkkkkkkkkk  kkkkkkkkkk   *
-* kkkk    kkkk kkkk    kkkk kkkk   kkkk kkkk    kkkkkkkkkk  kkkkkkkkkk 	 *
+* kkkk    kkkk kkkk    kkkk kkkk   kkkk kkkk    kkkkkkkkkk  kkkkkkkkkk   *
 *                                                                        *
 * krATos: a fREe opEN sOURce CoDE for mULti-pHysIC aDaptIVe SoLVErS,     *
 * aN extEnsIBLe OBjeCt oRiEnTEd SOlutION fOR fInITe ELemEnt fORmULatIONs *
@@ -33,12 +33,12 @@
 *                                                                        *
 * Created at Institute for Structural Mechanics                          *
 * Ruhr-University Bochum, Germany                                        *
-* Last modified by:    $Author: rrossi $  				 *
-* Date:                $Date: 2009-01-15 11:11:35 $			 *
-* Revision:            $Revision: 1.5 $ 				 *
+* Last modified by:    $Author: rrossi $                 *
+* Date:                $Date: 2009-01-15 11:11:35 $          *
+* Revision:            $Revision: 1.5 $                  *
 *========================================================================*
-* International Center of Numerical Methods in Engineering - CIMNE	 *
-* Barcelona - Spain 							 *
+* International Center of Numerical Methods in Engineering - CIMNE   *
+* Barcelona - Spain                              *
 *========================================================================*
 */
 
@@ -134,23 +134,11 @@ extern "C"
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 template< class TSparseSpaceType, class TDenseSpaceType,
-class TReordererType = Reorderer<TSparseSpaceType, TDenseSpaceType> >
+          class TModelPartType,
+          class TReordererType = Reorderer<TSparseSpaceType, TDenseSpaceType> >
 class SuperLUIterativeSolver : public DirectSolver< TSparseSpaceType,
-        TDenseSpaceType, TReordererType>
+        TDenseSpaceType, TModelPartType, TReordererType>
 {
 public:
     /**
@@ -158,7 +146,7 @@ public:
      */
     KRATOS_CLASS_POINTER_DEFINITION(  SuperLUIterativeSolver );
 
-    typedef LinearSolver<TSparseSpaceType, TDenseSpaceType, TReordererType> BaseType;
+    typedef DirectSolver<TSparseSpaceType, TDenseSpaceType, TModelPartType, TReordererType> BaseType;
 
     typedef typename TSparseSpaceType::MatrixType SparseMatrixType;
 
@@ -175,6 +163,7 @@ public:
                            double DropTol=1e-4,
                            double FillTol = 1e-2,
                            double FillFactor=10)
+    : BaseType()
     {
         mTol = NewMaxTolerance;
         mmax_it = NewMaxIterationsNumber;
@@ -185,6 +174,7 @@ public:
     }
 
     SuperLUIterativeSolver()
+    : BaseType()
     {
         mTol = 1e-6;
         mrestart = 150;
@@ -197,7 +187,7 @@ public:
     /**
      * Destructor
      */
-    virtual ~SuperLUIterativeSolver() {};
+    ~SuperLUIterativeSolver() override {};
 
     /**
      * Normal solve method.
@@ -207,15 +197,15 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB)
+    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB) override
     {
         //void dmatvec_mult(double alpha, double x[], double beta, double y[]);
         //void dpsolve(int n, double x[], double y[]);
         //////////////////////////////////////////////////////////////////////////////extern int dfgmr( int n,
-        //	void (*matvec_mult)(double, double [], double, double []),
-        //	void (*psolve)(int n, double [], double[]),
-        //	double *rhs, double *sol, double tol, int restrt, int *itmax,
-        //	FILE *fits);
+        //  void (*matvec_mult)(double, double [], double, double []),
+        //  void (*psolve)(int n, double [], double[]),
+        //  double *rhs, double *sol, double tol, int restrt, int *itmax,
+        //  FILE *fits);
         //    extern int dfill_diag(int n, NCformat *Astore);
 
         char     equed[1] = {'B'};
@@ -226,8 +216,7 @@ public:
         SuperMatrix A, L, U;
         SuperMatrix B, X;
 
-        
-	//double   *a_orig;
+    //double   *a_orig;
         //int       *asub_orig, *xa_orig;
         int      *etree;
         int      *perm_c; /* column permutation vector */
@@ -280,27 +269,26 @@ public:
         options.ILU_MILU = SILU;
          */
 
-	ilu_set_default_options(&options);
-	options.ILU_MILU = SILU; //SMILU_3;
-	 
-	options.PrintStat = NO;
-	options.Trans = NOTRANS;
-	
-// 	options.RowPerm = NO;
+        ilu_set_default_options(&options);
+        options.ILU_MILU = SILU; //SMILU_3;
 
+        options.PrintStat = NO;
+        options.Trans = NOTRANS;
+
+//  options.RowPerm = NO;
 
         options.ILU_DropTol = mDropTol;
         options.ILU_FillTol = mFillTol;
-        options.ILU_FillFactor = mFillFactor; 
-	
-// 	options.SymmetricMode = YES;
-//  	options.ILU_DropRule = DROP_DYNAMIC;
+        options.ILU_FillFactor = mFillFactor;
+
+//  options.SymmetricMode = YES;
+//      options.ILU_DropRule = DROP_DYNAMIC;
 //         options.ILU_Norm = ONE_NORM;
 
-// 	options.IterRefine = SLU_DOUBLE;
+//  options.IterRefine = SLU_DOUBLE;
 
         /* Modify the defaults. */
-         options.PivotGrowth = YES;	  /* Compute reciprocal pivot growth */
+         options.PivotGrowth = YES;   /* Compute reciprocal pivot growth */
          options.ConditionNumber = YES;/* Compute reciprocal condition number */
 
         if ( lwork > 0 )
@@ -308,7 +296,6 @@ public:
             work =(double*) SUPERLU_MALLOC(lwork);
             if ( !work ) ABORT("Malloc fails for work[].");
         }
-
 
         //copy matrix from kratos
         //Fill the SuperLU matrices
@@ -319,8 +306,8 @@ public:
         n = rA.size2();
 
         //create a copy of the matrix
-        int *index1_vector = new (std::nothrow) int[rA.index1_data().size()];
-        int *index2_vector = new (std::nothrow) int[rA.index2_data().size()];
+        std::vector<int> index1_vector(rA.index1_data().size());
+        std::vector<int> index2_vector(rA.index2_data().size());
 
         for ( int unsigned i = 0; i < rA.index1_data().size(); i++ )
             index1_vector[i] = (int)rA.index1_data()[i];
@@ -337,40 +324,34 @@ public:
 //                                 SLU_NC, SLU_D, SLU_GE //ARGH...maybe this should be SLU_NC
 //                                );
 
-// 	SuperMatrix Akratos;
-// 	dCreate_CompRow_Matrix (&A, rA.size1(), rA.size2(),
+//  SuperMatrix Akratos;
+//  dCreate_CompRow_Matrix (&A, rA.size1(), rA.size2(),
 //                                 rA.nnz(),
 //                                 rA.value_data().begin(),
 //                                 index2_vector, //can not avoid a copy as ublas uses unsigned int internally
 //                                 index1_vector, //can not avoid a copy as ublas uses unsigned int internally
 //                                 SLU_NR, SLU_D, SLU_GE
 //                                );
-	
-	int_t *asubt, *xat;
-	double  *at;
-	dCompRow_to_CompCol(rA.size1(), rA.size2(), rA.nnz(),rA.value_data().begin(), index2_vector, index1_vector,&at, &asubt, &xat);
-				
-	dCreate_CompCol_Matrix(&A, rA.size1(), rA.size2(),rA.nnz(),  at, asubt, xat, SLU_NC, SLU_D, SLU_GE);
-	
-        delete [] index1_vector;
-        delete [] index2_vector;
 
-	
+        int_t *asubt, *xat;
+        double  *at;
+        dCompRow_to_CompCol(rA.size1(), rA.size2(), rA.nnz(),rA.value_data().begin(), index2_vector.data(), index1_vector.data(), &at, &asubt, &xat);
 
-	
-// 	double **values;;
-// 	int **i1;
-//         int **i2;	       
-// 	dCompRow_to_CompCol(rA.size1(), rA.size2(), rA.nnz(), 
-// 		    rA.value_data().begin(), index2_vector, index1_vector,
-// 		    values, i1, i2);
+        dCreate_CompCol_Matrix(&A, rA.size1(), rA.size2(),rA.nnz(),  at, asubt, xat, SLU_NC, SLU_D, SLU_GE);
 
-	//jmc
-	//NCformat *Astore;
+//  double **values;;
+//  int **i1;
+//         int **i2;
+//  dCompRow_to_CompCol(rA.size1(), rA.size2(), rA.nnz(),
+//          rA.value_data().begin(), index2_vector, index1_vector,
+//          values, i1, i2);
+
+    //jmc
+    //NCformat *Astore;
         //Astore = (NCformat*) A.Store;
         dfill_diag(n, (NCformat*) A.Store);
 
-	//jmc
+    //jmc
         //printf("Dimension %dx%d; # nonzeros %d\n", A.nrow, A.ncol, ((NCformat*) A.Store)->nnz);
 
         fflush(stdout);
@@ -427,8 +408,8 @@ public:
         /* Set RHS for GMRES. */
         if (!(b = doubleMalloc(m))) ABORT("Malloc fails for b[].");
         for (i = 0; i < m; i++) b[i] = rB[i];
-	
-	//jmc
+
+    //jmc
         //printf("dgsisx(): info %d, equed %c\n", info, equed[0]);
         //if (info > 0 || rcond < 1e-8 || rpg > 1e8)
         //    printf("WARNING: This preconditioner might be unstable.\n");
@@ -443,9 +424,9 @@ public:
         //else if ( info > 0 && lwork == -1 )
         //{
         //    printf("** Estimated memory: %d bytes\n", info - n);
-	//}
+    //}
 
-	//jmc
+    //jmc
         //NCformat *Ustore;
         //SCformat *Lstore;
         //Lstore = (SCformat *) L.Store;
@@ -484,7 +465,7 @@ public:
         //restrt = SUPERLU_MIN(n / 3 + 1, 150);
         int restrt = SUPERLU_MIN(n / 3 + 1, mrestart);
         //jmc
-	//int maxit = mmax_it; //1000;
+    //int maxit = mmax_it; //1000;
         int iter = mmax_it;
         resid = mTol; // 1e-8;
         if (!(x = doubleMalloc(n))) ABORT("Malloc fails for x[].");
@@ -493,8 +474,8 @@ public:
         {
             int i_1 = 1;
 
-	    double nrmB, res, t;
-            
+        double nrmB, res, t;
+
             //extern double dnrm2_(int *, double [], int *);
             //extern void daxpy_(int *, double *, double [], int *, double [], int *);
 
@@ -513,12 +494,12 @@ public:
                 #pragma omp parallel for
                 for (int i = 0; i < n; i++) x[i] *= C[i];
             }
-            
+
             t = SuperLU_timer_() - t;
 
             /* Output the result. */
-	    //jmc
-	    //double nrmA;
+        //jmc
+        //double nrmA;
             //nrmA = dnrm2_(&(Astore->nnz), (double *)((DNformat *)A.Store)->nzval,
             //              &i_1);
 
@@ -526,16 +507,16 @@ public:
             sp_dgemv( ( char *)"N", -1.0, &A, x, 1, 1.0, b, 1);
             res = dnrm2_(&m, b, &i_1);
             resid = res / nrmB;
-	    //jmc
+        //jmc
             //printf("||A||_F = %.1e, ||B||_2 = %.1e, ||B-A*X||_2 = %.1e, "
             //       "relres = %.1e\n", nrmA, nrmB, res, resid);
 
             //if (iter >= maxit)
             //{
             //    if (resid >= 1.0){
-	    //      iter = -180;
-	    //      std::cout << "final residual is VERY VERY LARGE" << std::endl;
-	    //}
+        //      iter = -180;
+        //      std::cout << "final residual is VERY VERY LARGE" << std::endl;
+        //}
             //    else if (resid > 1e-8) iter = -111;
             //}
             //printf("iteration: %d\nresidual: %.1e\nGMRES time: %.2f seconds.\n",
@@ -588,16 +569,12 @@ public:
 
         SUPERLU_FREE(x);
 
-
-
-	SUPERLU_FREE(asubt);
-	SUPERLU_FREE(xat);
-	SUPERLU_FREE(at);
+        SUPERLU_FREE(asubt);
+        SUPERLU_FREE(xat);
+        SUPERLU_FREE(at);
 #if ( DEBUGlevel>=1 )
         CHECK_MALLOC("Exit main()");
 #endif
-
-
         return true;
     }
 
@@ -609,7 +586,7 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB)
+    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB) override
     {
         /**
          * TODO:
@@ -654,7 +631,7 @@ public:
     /**
      * Print information about this object.
      */
-    void  PrintInfo(std::ostream& rOStream) const
+    void PrintInfo(std::ostream& rOStream) const override
     {
         rOStream << "SuperLU solver finished.";
     }
@@ -662,13 +639,13 @@ public:
     /**
      * Print object's data.
      */
-    void  PrintData(std::ostream& rOStream) const
+    void PrintData(std::ostream& rOStream) const override
     {
     }
 
 private:
 
-    double mTol; 
+    double mTol;
     int mmax_it;
     int mrestart;
     double mDropTol;
@@ -687,35 +664,6 @@ private:
 
 }; // Class SkylineLUFactorizationSolver
 
-
-/**
- * input stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType,class TReordererType>
-inline std::istream& operator >> (std::istream& rIStream, SuperLUIterativeSolver< TSparseSpaceType,
-                                  TDenseSpaceType, TReordererType>& rThis)
-{
-    return rIStream;
-}
-
-/**
- * output stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType, class TReordererType>
-inline std::ostream& operator << (std::ostream& rOStream,
-                                  const SuperLUIterativeSolver<TSparseSpaceType,
-                                  TDenseSpaceType, TReordererType>& rThis)
-{
-    rThis.PrintInfo(rOStream);
-    rOStream << std::endl;
-    rThis.PrintData(rOStream);
-
-    return rOStream;
-}
-
-
 }  // namespace Kratos.
 
-#endif // KRATOS_SUPERLU_ITERATIVE_SOLVER_H_INCLUDED  defined 
-
-
+#endif // KRATOS_SUPERLU_ITERATIVE_SOLVER_H_INCLUDED  defined

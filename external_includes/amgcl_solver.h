@@ -27,8 +27,9 @@
 // Project includes
 #include "includes/define.h"
 #include "includes/kratos_parameters.h"
-#include "linear_solvers/iterative_solver.h"
 #include "includes/ublas_interface.h"
+#include "includes/variables.h"
+#include "linear_solvers/iterative_solver.h"
 #include "spaces/ublas_space.h"
 
 #include <amgcl/coarsening/rigid_body_modes.hpp>
@@ -107,9 +108,10 @@ void KRATOS_API(KRATOS_CORE) AMGCLSolve(
  * @author Riccardo Rossi
  */
 template< class TSparseSpaceType, class TDenseSpaceType,
+          class TModelPartType,
           class TReordererType = Reorderer<TSparseSpaceType, TDenseSpaceType> >
 class AMGCLSolver : public LinearSolver< TSparseSpaceType,
-    TDenseSpaceType, TReordererType>
+    TDenseSpaceType, TModelPartType, TReordererType>
 {
 public:
     ///@name Type Definitions
@@ -119,7 +121,7 @@ public:
     KRATOS_CLASS_POINTER_DEFINITION( AMGCLSolver );
 
     /// The base class definition
-    typedef LinearSolver<TSparseSpaceType, TDenseSpaceType, TReordererType> BaseType;
+    typedef LinearSolver<TSparseSpaceType, TDenseSpaceType, TModelPartType, TReordererType> BaseType;
 
     /// The sparse matric type
     typedef typename TSparseSpaceType::MatrixType SparseMatrixType;
@@ -130,14 +132,17 @@ public:
     /// Dense matrix type
     typedef typename TDenseSpaceType::MatrixType DenseMatrixType;
 
+    /// ModelPart type
+    typedef typename BaseType::ModelPartType ModelPartType;
+
     /// DofArray type
-    typedef ModelPart::DofsArrayType DofsArrayType;
+    typedef typename ModelPartType::DofsArrayType DofsArrayType;
 
     /// The index type definition to be consistent
-    typedef typename TSparseSpaceType::IndexType IndexType;
+    typedef typename BaseType::IndexType IndexType;
 
     /// The size type definition
-    typedef std::size_t SizeType;
+    typedef typename BaseType::SizeType SizeType;
 
     ///@}
     ///@name Life Cycle
@@ -516,7 +521,7 @@ public:
         VectorType& rX,
         VectorType& rB,
         DofsArrayType& rDofSet,
-        ModelPart& rModelPart
+        ModelPartType& rModelPart
         ) override
     {
         int old_ndof = -1;

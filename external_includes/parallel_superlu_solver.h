@@ -84,9 +84,10 @@ namespace ublas = boost::numeric::ublas;
 namespace Kratos
 {
 template< class TSparseSpaceType, class TDenseSpaceType,
+          class TModelPartType,
           class TReordererType = Reorderer<TSparseSpaceType, TDenseSpaceType> >
 class ParallelSuperLUSolver : public DirectSolver< TSparseSpaceType,
-    TDenseSpaceType, TReordererType>
+    TDenseSpaceType, TModelPartType, TReordererType>
 {
 public:
     /**
@@ -94,7 +95,7 @@ public:
      */
     KRATOS_CLASS_POINTER_DEFINITION(  ParallelSuperLUSolver );
 
-    typedef LinearSolver<TSparseSpaceType, TDenseSpaceType, TReordererType> BaseType;
+    typedef DirectSolver<TSparseSpaceType, TDenseSpaceType, TModelPartType, TReordererType> BaseType;
 
     typedef typename TSparseSpaceType::MatrixType SparseMatrixType;
 
@@ -110,7 +111,7 @@ public:
     /**
      * Destructor
      */
-    virtual ~ParallelSuperLUSolver() {}
+    ~ParallelSuperLUSolver() override {}
 
     /**
      * Normal solve method.
@@ -120,7 +121,7 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB)
+    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB) override
     {
         //std::cout << "this is parallel SuperLU solver" << std::endl;
         //std::cout << "matrix size in solver: " << rA.size1() << std::endl;
@@ -166,8 +167,6 @@ public:
 //                 for( int i=0; i<rA.index1_data().size(); i++ )
 //                     std::cout << A.index1_data()[i] << "  " ;
 //                 std::cout << std::endl;
-
-
 
         if(IsNotConsistent(rA, rX, rB))
         {
@@ -259,7 +258,7 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB)
+    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB) override
     {
         /**
          * TODO:
@@ -304,7 +303,7 @@ public:
     /**
      * Print information about this object.
      */
-    void  PrintInfo(std::ostream& rOStream) const
+    void  PrintInfo(std::ostream& rOStream) const override
     {
         rOStream << "Parallel SuperLU solver finished.";
     }
@@ -312,7 +311,7 @@ public:
     /**
      * Print object's data.
      */
-    void  PrintData(std::ostream& rOStream) const
+    void  PrintData(std::ostream& rOStream) const override
     {
     }
 
@@ -330,34 +329,6 @@ private:
 
 }; // Class ParallelSuperLUSolver
 
-
-/**
- * input stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType,class TReordererType>
-inline std::istream& operator >> (std::istream& rIStream, ParallelSuperLUSolver< TSparseSpaceType,
-                                  TDenseSpaceType, TReordererType>& rThis)
-{
-}
-
-/**
- * output stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType, class TReordererType>
-inline std::ostream& operator << (std::ostream& rOStream,
-                                  const ParallelSuperLUSolver<TSparseSpaceType,
-                                  TDenseSpaceType, TReordererType>& rThis)
-{
-    rThis.PrintInfo(rOStream);
-    rOStream << std::endl;
-    rThis.PrintData(rOStream);
-
-    return rOStream;
-}
-
-
 }  // namespace Kratos.
 
-#endif // KRATOS_PARALLEL_SUPERLU_SOLVER_H_INCLUDED  defined 
-
-
+#endif // KRATOS_PARALLEL_SUPERLU_SOLVER_H_INCLUDED  defined

@@ -3,10 +3,10 @@
 * kkkk   kkkk  kkkkkkkkkk   kkkkk    kkkkkkkkkk kkkkkkkkkk kkkkkkkkkK    *
 * kkkk  kkkk   kkkk   kkkk  kkkkkk   kkkkkkkkkk kkkkkkkkkk kkkkkkkkkK    *
 * kkkkkkkkk    kkkk   kkkk  kkkkkkk     kkkk    kkk    kkk  kkkk         *
-* kkkkkkkkk    kkkkkkkkkkk  kkkk kkk	kkkk    kkk    kkk    kkkk       *
+* kkkkkkkkk    kkkkkkkkkkk  kkkk kkk    kkkk    kkk    kkk    kkkk       *
 * kkkk  kkkk   kkkk  kkkk   kkkk kkkk   kkkk    kkk    kkk      kkkk     *
 * kkkk   kkkk  kkkk   kkkk  kkkk  kkkk  kkkk    kkkkkkkkkk  kkkkkkkkkk   *
-* kkkk    kkkk kkkk    kkkk kkkk   kkkk kkkk    kkkkkkkkkk  kkkkkkkkkk 	 *
+* kkkk    kkkk kkkk    kkkk kkkk   kkkk kkkk    kkkkkkkkkk  kkkkkkkkkk   *
 *                                                                        *
 * krATos: a fREe opEN sOURce CoDE for mULti-pHysIC aDaptIVe SoLVErS,     *
 * aN extEnsIBLe OBjeCt oRiEnTEd SOlutION fOR fInITe ELemEnt fORmULatIONs *
@@ -33,12 +33,12 @@
 *                                                                        *
 * Created at Institute for Structural Mechanics                          *
 * Ruhr-University Bochum, Germany                                        *
-* Last modified by:    $Author: rrossi $  				 *
-* Date:                $Date: 2009-01-15 11:11:35 $			 *
-* Revision:            $Revision: 1.5 $ 				 *
+* Last modified by:    $Author: rrossi $                 *
+* Date:                $Date: 2009-01-15 11:11:35 $          *
+* Revision:            $Revision: 1.5 $                  *
 *========================================================================*
-* International Center of Numerical Methods in Engineering - CIMNE	 *
-* Barcelona - Spain 							 *
+* International Center of Numerical Methods in Engineering - CIMNE   *
+* Barcelona - Spain                              *
 *========================================================================*
 */
 
@@ -86,10 +86,10 @@ extern "C"
 
 
 
-template< class TSparseSpaceType, class TDenseSpaceType,
-class TReordererType = Reorderer<TSparseSpaceType, TDenseSpaceType> >
+template< class TSparseSpaceType, class TDenseSpaceType, class TModelPartType,
+          class TReordererType = Reorderer<TSparseSpaceType, TDenseSpaceType> >
 class ITSOL_ARMS_Solver : public DirectSolver< TSparseSpaceType,
-        TDenseSpaceType, TReordererType>
+        TDenseSpaceType, TModelPartType, TReordererType>
 {
 public:
     /**
@@ -97,7 +97,7 @@ public:
      */
     KRATOS_CLASS_POINTER_DEFINITION(  ITSOL_ARMS_Solver );
 
-    typedef LinearSolver<TSparseSpaceType, TDenseSpaceType, TReordererType> BaseType;
+    typedef DirectSolver<TSparseSpaceType, TDenseSpaceType, TModelPartType, TReordererType> BaseType;
 
     typedef typename TSparseSpaceType::MatrixType SparseMatrixType;
 
@@ -109,8 +109,9 @@ public:
      * Default constructor
      */
     ITSOL_ARMS_Solver(double NewMaxTolerance,
-                           int NewMaxIterationsNumber,
-                           int restart)
+                      int NewMaxIterationsNumber,
+                      int restart)
+    : BaseType()
     {
         mTol = NewMaxTolerance;
         mmax_it = NewMaxIterationsNumber;
@@ -127,7 +128,7 @@ public:
     /**
      * Destructor
      */
-    virtual ~ITSOL_ARMS_Solver() {};
+    ~ITSOL_ARMS_Solver() override {};
 
     /**
      * Normal solve method.
@@ -137,44 +138,40 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB)
+    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB) override
     {
-      
               //create a copy of the matrix
-        int *index1_vector = new (std::nothrow) int[rA.index1_data().size()];
-        int *index2_vector = new (std::nothrow) int[rA.index2_data().size()];
+        std::vector<int> index1_vector(rA.index1_data().size());
+        std::vector<int> index2_vector(rA.index2_data().size());
 
         for ( int unsigned i = 0; i < rA.index1_data().size(); i++ )
             index1_vector[i] = (int)rA.index1_data()[i];
 
         for ( unsigned int i = 0; i < rA.index2_data().size(); i++ )
             index2_vector[i] = (int)rA.index2_data()[i];
-	
-	io_t io;
- 
-	memset(&io, 0, sizeof(io));
-	
-	  io.nparam = 1; //     1. nparam  = number of tests for the preconditioner (see below)
-	  io.ndim = rA.size1();  //     
-	  io.nnz = rA.value_data().size();
-	  io.im = mrestart;  //     2. dim     = dimension of Krylov subspace in (outer) FGMRES
-	  io.maxits = mmax_it; //             3. maxits  = maxits in outer fgmres.
-	  io.tol = mTol; //         4. tol     = tolerance for stopping iteration
-	  io.lfil0 = 50;  //            5. lfil0   = initial lfil
-	  io.lfilInc = 1;  //            6. lfilInc = increment for lfil
-	  io.tol0 = 0.001; //          7. tol0    = initial tol
-	  io.tolMul = 0.01;  //          8. tolMul  = multiple increment for tol0
-	  io.fill_lev = 1;  //            9. USED BY ILUK ONLY: fill_lev = fill level
-	  io.perm_type = 2;  //           10. ARMS ONLY: PQ perms or Ind. Sets.
-	  io.Bsize  = 30; //            11. ARMS ONLY: Block-size for independent sets/last block
-	  io.fout = NULL;
-	
-	int echo_level = 1; //does not work if we set it to 0 ... should investigate further!
-	
-	solveARMS( &io, echo_level, rA.value_data().begin(), index1_vector, index2_vector, &rX[0], &rB[0]);
-	
-	delete [] index1_vector;
-        delete [] index2_vector;
+
+        io_t io;
+
+        memset(&io, 0, sizeof(io));
+
+        io.nparam = 1; //     1. nparam  = number of tests for the preconditioner (see below)
+        io.ndim = rA.size1();  //
+        io.nnz = rA.value_data().size();
+        io.im = mrestart;  //     2. dim     = dimension of Krylov subspace in (outer) FGMRES
+        io.maxits = mmax_it; //             3. maxits  = maxits in outer fgmres.
+        io.tol = mTol; //         4. tol     = tolerance for stopping iteration
+        io.lfil0 = 50;  //            5. lfil0   = initial lfil
+        io.lfilInc = 1;  //            6. lfilInc = increment for lfil
+        io.tol0 = 0.001; //          7. tol0    = initial tol
+        io.tolMul = 0.01;  //          8. tolMul  = multiple increment for tol0
+        io.fill_lev = 1;  //            9. USED BY ILUK ONLY: fill_lev = fill level
+        io.perm_type = 2;  //           10. ARMS ONLY: PQ perms or Ind. Sets.
+        io.Bsize  = 30; //            11. ARMS ONLY: Block-size for independent sets/last block
+        io.fout = NULL;
+
+        int echo_level = 1; //does not work if we set it to 0 ... should investigate further!
+
+        solveARMS( &io, echo_level, rA.value_data().begin(), index1_vector.data(), index2_vector.data(), rX.data(), rB.data());
 
         return true;
     }
@@ -187,11 +184,9 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB)
+    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB) override
     {
- 
         bool is_solved = true;
-
 
         return is_solved;
     }
@@ -199,7 +194,7 @@ public:
     /**
      * Print information about this object.
      */
-    void  PrintInfo(std::ostream& rOStream) const
+    void PrintInfo(std::ostream& rOStream) const override
     {
         rOStream << "SuperLU solver finished.";
     }
@@ -207,13 +202,13 @@ public:
     /**
      * Print object's data.
      */
-    void  PrintData(std::ostream& rOStream) const
+    void PrintData(std::ostream& rOStream) const override
     {
     }
 
 private:
 
-    double mTol; 
+    double mTol;
     int mmax_it;
     int mrestart;
 //     double mDropTol;
@@ -232,35 +227,6 @@ private:
 
 }; // Class SkylineLUFactorizationSolver
 
-
-/**
- * input stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType,class TReordererType>
-inline std::istream& operator >> (std::istream& rIStream, ITSOL_ARMS_Solver< TSparseSpaceType,
-                                  TDenseSpaceType, TReordererType>& rThis)
-{
-    return rIStream;
-}
-
-/**
- * output stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType, class TReordererType>
-inline std::ostream& operator << (std::ostream& rOStream,
-                                  const ITSOL_ARMS_Solver<TSparseSpaceType,
-                                  TDenseSpaceType, TReordererType>& rThis)
-{
-    rThis.PrintInfo(rOStream);
-    rOStream << std::endl;
-    rThis.PrintData(rOStream);
-
-    return rOStream;
-}
-
-
 }  // namespace Kratos.
 
-#endif // KRATOS_ITSOL_ARMS_SOLVER  defined 
-
-
+#endif // KRATOS_ITSOL_ARMS_SOLVER  defined

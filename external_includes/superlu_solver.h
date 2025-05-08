@@ -62,9 +62,10 @@ namespace ublas = boost::numeric::ublas;
 namespace Kratos
 {
 template< class TSparseSpaceType, class TDenseSpaceType,
+          class TModelPartType,
           class TReordererType = Reorderer<TSparseSpaceType, TDenseSpaceType> >
 class SuperLUSolver : public DirectSolver< TSparseSpaceType,
-    TDenseSpaceType, TReordererType>
+    TDenseSpaceType, TModelPartType, TReordererType>
 {
 public:
     /**
@@ -72,13 +73,15 @@ public:
      */
     KRATOS_CLASS_POINTER_DEFINITION(  SuperLUSolver );
 
-    typedef LinearSolver<TSparseSpaceType, TDenseSpaceType, TReordererType> BaseType;
+    typedef DirectSolver<TSparseSpaceType, TDenseSpaceType, TModelPartType, TReordererType> BaseType;
 
     typedef typename TSparseSpaceType::MatrixType SparseMatrixType;
 
     typedef typename TSparseSpaceType::VectorType VectorType;
 
     typedef typename TDenseSpaceType::MatrixType DenseMatrixType;
+
+    typedef typename BaseType::ModelPartType ModelPartType;
 
     /**
      * Default constructor
@@ -88,20 +91,20 @@ public:
     /**
      * Destructor
      */
-    virtual ~SuperLUSolver() {}
+    ~SuperLUSolver() override {}
 
-    virtual bool AdditionalPhysicalDataIsNeeded()
+    bool AdditionalPhysicalDataIsNeeded() override
     {
         return false;
     }
 
-    virtual void ProvideAdditionalData(
+    void ProvideAdditionalData(
         SparseMatrixType& rA,
         VectorType& rX,
         VectorType& rB,
-        typename ModelPart::DofsArrayType& rdof_set,
-        ModelPart& r_model_part
-    )
+        typename ModelPartType::DofsArrayType& rdof_set,
+        ModelPartType& r_model_part
+    ) override
     {}
 
     /**
@@ -112,10 +115,10 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB)
+    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB) override
     {
-        //std::cout << "matrix size in solver:  " << rA.size1() << std::endl;
-        //std::cout << "RHS size in solver SLU: " << rB.size() << std::endl;
+        // std::cout << "matrix size in solver:  " << rA.size1() << std::endl;
+        // std::cout << "RHS size in solver SLU: " << rB.size() << std::endl;
 
 //               typedef ublas::compressed_matrix<double, ublas::row_major, 0,
 //                 ublas::unbounded_array<int>, ublas::unbounded_array<double> > cm_t;
@@ -149,8 +152,8 @@ public:
         SuperMatrix Aslu, B, L, U;
 
         //create a copy of the matrix
-        int *index1_vector = new (std::nothrow) int[rA.index1_data().size()];
-        int *index2_vector = new (std::nothrow) int[rA.index2_data().size()];
+        std::vector<int> index1_vector(rA.index1_data().size());
+        std::vector<int> index2_vector(rA.index2_data().size());
 //         double *values_vector = new (std::nothrow) double[rA.value_data().size()];
 
         for( int unsigned i = 0; i < rA.index1_data().size(); i++ )
@@ -179,8 +182,8 @@ public:
         dCreate_CompRow_Matrix (&Aslu, rA.size1(), rA.size2(),
                                 rA.nnz(),
                                 rA.value_data().begin(),
-                                index2_vector, //can not avoid a copy as ublas uses unsigned int internally
-                                index1_vector, //can not avoid a copy as ublas uses unsigned int internally
+                                index2_vector.data(), //can not avoid a copy as ublas uses unsigned int internally
+                                index1_vector.data(), //can not avoid a copy as ublas uses unsigned int internally
                                 SLU_NR, SLU_D, SLU_GE
                                );
 
@@ -222,8 +225,6 @@ public:
         Destroy_SuperNode_Matrix(&L);
         Destroy_CompCol_Matrix(&U);
 
-        delete [] index1_vector;
-        delete [] index2_vector;
 //         delete [] b_vector;
 
         //CHECK WITH VALGRIND IF THIS IS NEEDED ...or if it is done by the lines above
@@ -244,7 +245,7 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB)
+    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB) override
     {
         //std::cout << "matrix size in solver:  " << rA.size1() << std::endl;
         //std::cout << "RHS size in solver SLU: " << rB.size() << std::endl;
@@ -278,8 +279,8 @@ public:
         SuperMatrix Aslu, B, L, U;
 
         //create a copy of the matrix
-        int *index1_vector = new (std::nothrow) int[rA.index1_data().size()];
-        int *index2_vector = new (std::nothrow) int[rA.index2_data().size()];
+        std::vector<int> index1_vector(rA.index1_data().size());
+        std::vector<int> index2_vector(rA.index2_data().size());
 //         double *values_vector = new (std::nothrow) double[rA.value_data().size()];
 
         for( int unsigned i = 0; i < rA.index1_data().size(); i++ )
@@ -308,8 +309,8 @@ public:
         dCreate_CompRow_Matrix (&Aslu, rA.size1(), rA.size2(),
                                 rA.nnz(),
                                 rA.value_data().begin(),
-                                index2_vector, //can not avoid a copy as ublas uses unsigned int internally
-                                index1_vector, //can not avoid a copy as ublas uses unsigned int internally
+                                index2_vector.data(), //can not avoid a copy as ublas uses unsigned int internally
+                                index1_vector.data(), //can not avoid a copy as ublas uses unsigned int internally
                                 SLU_NR, SLU_D, SLU_GE
                                );
 
@@ -358,8 +359,6 @@ public:
         Destroy_SuperNode_Matrix(&L);
         Destroy_CompCol_Matrix(&U);
 
-        delete [] index1_vector;
-        delete [] index2_vector;
 //         delete [] b_vector;
 
         //CHECK WITH VALGRIND IF THIS IS NEEDED ...or if it is done by the lines above
@@ -375,7 +374,7 @@ public:
     /**
      * Print information about this object.
      */
-    void  PrintInfo(std::ostream& rOStream) const
+    void PrintInfo(std::ostream& rOStream) const override
     {
         rOStream << "SuperLU solver finished.";
     }
@@ -383,7 +382,7 @@ public:
     /**
      * Print object's data.
      */
-    void  PrintData(std::ostream& rOStream) const
+    void PrintData(std::ostream& rOStream) const override
     {
     }
 
@@ -401,35 +400,6 @@ private:
 
 }; // Class SkylineLUFactorizationSolver
 
-
-/**
- * input stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType,class TReordererType>
-inline std::istream& operator >> (std::istream& rIStream, SuperLUSolver< TSparseSpaceType,
-                                  TDenseSpaceType, TReordererType>& rThis)
-{
-    return rIStream;
-}
-
-/**
- * output stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType, class TReordererType>
-inline std::ostream& operator << (std::ostream& rOStream,
-                                  const SuperLUSolver<TSparseSpaceType,
-                                  TDenseSpaceType, TReordererType>& rThis)
-{
-    rThis.PrintInfo(rOStream);
-    rOStream << std::endl;
-    rThis.PrintData(rOStream);
-
-    return rOStream;
-}
-
-
 }  // namespace Kratos.
 
-#endif // KRATOS_SUPERLU_SOLVER_H_INCLUDED  defined 
-
-
+#endif // KRATOS_SUPERLU_SOLVER_H_INCLUDED  defined

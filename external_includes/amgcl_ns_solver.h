@@ -42,15 +42,17 @@ namespace Kratos
 
 
 template< class TSparseSpaceType, class TDenseSpaceType,
+          class TModelPartType,
           class TReordererType = Reorderer<TSparseSpaceType, TDenseSpaceType> >
 class AMGCL_NS_Solver : public LinearSolver< TSparseSpaceType,
-    TDenseSpaceType, TReordererType>
+    TDenseSpaceType, TModelPartType, TReordererType>
 {
 public:
     /**
      * Counted pointer of AMGCL_NS_Solver
      */
     KRATOS_CLASS_POINTER_DEFINITION( AMGCL_NS_Solver );
+
     typedef LinearSolver<TSparseSpaceType, TDenseSpaceType, TReordererType> BaseType;
 
     typedef typename TSparseSpaceType::MatrixType SparseMatrixType;
@@ -62,8 +64,7 @@ public:
     /// The index type definition to be consistent
     typedef typename TSparseSpaceType::IndexType IndexType;
 
-    /// The size type definition
-    typedef std::size_t SizeType;
+    typedef typename BaseType::ModelPartType ModelPartType;
 
     AMGCL_NS_Solver(Parameters rParameters)
     {
@@ -273,7 +274,6 @@ public:
     bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB) override
     {
         return false;
-
     }
 
     /**
@@ -312,8 +312,8 @@ public:
         SparseMatrixType& rA,
         VectorType& rX,
         VectorType& rB,
-        typename ModelPart::DofsArrayType& rDofSet,
-        ModelPart& rModelPart
+        typename ModelPartType::DofsArrayType& rDofSet,
+        ModelPartType& rModelPart
     ) override
     {
         //*****************************
@@ -400,7 +400,7 @@ public:
         //*****************************
         //compute pressure mask
         if(mp.size() != rA.size1()) mp.resize( rA.size1() );
-        for (ModelPart::DofsArrayType::iterator it = rDofSet.begin(); it!=rDofSet.end(); it++)
+        for (auto it = rDofSet.begin(); it!=rDofSet.end(); it++)
         {
             const unsigned int eq_id = it->EquationId();
             if( eq_id < rA.size1() )
@@ -408,8 +408,6 @@ public:
                 mp[eq_id]  = (it->GetVariable().Key() == PRESSURE);
             }
         }
-
-
     }
 
 private:
@@ -433,34 +431,6 @@ private:
 
 }; // Class AMGCL_NS_Solver
 
-
-/**
- * input stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType,class TReordererType>
-inline std::istream& operator >> (std::istream& rIStream, AMGCL_NS_Solver< TSparseSpaceType,
-                                  TDenseSpaceType, TReordererType>& rThis)
-{
-    return rIStream;
-}
-
-/**
- * output stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType, class TReordererType>
-inline std::ostream& operator << (std::ostream& rOStream,
-                                  const AMGCL_NS_Solver<TSparseSpaceType,
-                                  TDenseSpaceType, TReordererType>& rThis)
-{
-    rThis.PrintInfo(rOStream);
-    rOStream << std::endl;
-    rThis.PrintData(rOStream);
-
-    return rOStream;
-}
-
 }  // namespace Kratos.
-
-
 
 #endif // KRATOS_AMGCL_NAVIERSTOKES_SOLVER  defined

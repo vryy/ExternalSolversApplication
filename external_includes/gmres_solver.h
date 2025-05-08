@@ -3,10 +3,10 @@
 * kkkk   kkkk  kkkkkkkkkk   kkkkk    kkkkkkkkkk kkkkkkkkkk kkkkkkkkkK    *
 * kkkk  kkkk   kkkk   kkkk  kkkkkk   kkkkkkkkkk kkkkkkkkkk kkkkkkkkkK    *
 * kkkkkkkkk    kkkk   kkkk  kkkkkkk     kkkk    kkk    kkk  kkkk         *
-* kkkkkkkkk    kkkkkkkkkkk  kkkk kkk	kkkk    kkk    kkk    kkkk       *
+* kkkkkkkkk    kkkkkkkkkkk  kkkk kkk    kkkk    kkk    kkk    kkkk       *
 * kkkk  kkkk   kkkk  kkkk   kkkk kkkk   kkkk    kkk    kkk      kkkk     *
 * kkkk   kkkk  kkkk   kkkk  kkkk  kkkk  kkkk    kkkkkkkkkk  kkkkkkkkkk   *
-* kkkk    kkkk kkkk    kkkk kkkk   kkkk kkkk    kkkkkkkkkk  kkkkkkkkkk 	 *
+* kkkk    kkkk kkkk    kkkk kkkk   kkkk kkkk    kkkkkkkkkk  kkkkkkkkkk   *
 *                                                                        *
 * krATos: a fREe opEN sOURce CoDE for mULti-pHysIC aDaptIVe SoLVErS,     *
 * aN extEnsIBLe OBjeCt oRiEnTEd SOlutION fOR fInITe ELemEnt fORmULatIONs *
@@ -33,12 +33,12 @@
 *                                                                        *
 * Created at Institute for Structural Mechanics                          *
 * Ruhr-University Bochum, Germany                                        *
-* Last modified by:    $Author: janosch $  				 *
-* Date:                $Date: 2008-07-23 14:46:50 $			 *
-* Revision:            $Revision: 1.1 $ 				 *
+* Last modified by:    $Author: janosch $                *
+* Date:                $Date: 2008-07-23 14:46:50 $          *
+* Revision:            $Revision: 1.1 $                  *
 *========================================================================*
-* International Center of Numerical Methods in Engineering - CIMNE	 *
-* Barcelona - Spain 							 *
+* International Center of Numerical Methods in Engineering - CIMNE   *
+* Barcelona - Spain                              *
 *========================================================================*
 */
 
@@ -89,25 +89,25 @@ namespace Kratos
 /** Detail class definition.
 */
 template<class TSparseSpaceType, class TDenseSpaceType,
-         class TPreconditionerType = Preconditioner<TSparseSpaceType, TDenseSpaceType>,
+         class TModelPartType,
+         class TPreconditionerType = Preconditioner<TSparseSpaceType, TDenseSpaceType, TModelPartType>,
          class TReordererType = Reorderer<TSparseSpaceType, TDenseSpaceType> >
-class GMRESSolver : public IterativeSolver<TSparseSpaceType, TDenseSpaceType, TPreconditionerType, TReordererType>
+class GMRESSolver : public IterativeSolver<TSparseSpaceType, TDenseSpaceType, TModelPartType, TPreconditionerType, TReordererType>
 {
 public:
     ///@name Type Definitions
     ///@{
 
     /// Counted pointer of GMRESSolver
-    KRATOS_CLASS_POINTER_DEFINITION(  GMRESSolver );
+    KRATOS_CLASS_POINTER_DEFINITION( GMRESSolver );
 
-    typedef IterativeSolver<TSparseSpaceType, TDenseSpaceType, TPreconditionerType, TReordererType> BaseType;
+    typedef IterativeSolver<TSparseSpaceType, TDenseSpaceType, TModelPartType, TPreconditionerType, TReordererType> BaseType;
 
     typedef typename TSparseSpaceType::MatrixType SparseMatrixType;
 
     typedef typename TSparseSpaceType::VectorType VectorType;
 
     typedef typename TDenseSpaceType::MatrixType DenseMatrixType;
-
 
     ///@}
     ///@name Life Cycle
@@ -129,8 +129,7 @@ public:
     GMRESSolver(const GMRESSolver& Other) : BaseType(Other) {}
 
     /// Destructor.
-    virtual ~GMRESSolver() {}
-
+    ~GMRESSolver() override {}
 
     ///@}
     ///@name Operators
@@ -155,7 +154,7 @@ public:
     guess for iterative linear solvers.
     @param rB. Right hand side vector.
     */
-    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB)
+    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB) override
     {
         if(this->IsNotConsistent(rA, rX, rB))
             return false;
@@ -166,9 +165,9 @@ public:
 //
         //GetTimeTable()->Start(Info());
 
-// 	  BaseType::GetPreconditioner()->Initialize(rA,rX,rB);
-//  	  BaseType::GetPreconditioner()->ApplyInverseRight(rX);
-// 	  BaseType::GetPreconditioner()->ApplyLeft(rB);
+//    BaseType::GetPreconditioner()->Initialize(rA,rX,rB);
+//    BaseType::GetPreconditioner()->ApplyInverseRight(rX);
+//    BaseType::GetPreconditioner()->ApplyLeft(rB);
 
         long double *x;
         long double *rhs;
@@ -211,26 +210,26 @@ public:
             inner_iterations= rB.size()-1;
 
         mNumberOfRestarts= 0;
-// 		for(unsigned int i=0; i<2; i++)
-// 		{
-// 	 		if(
+//      for(unsigned int i=0; i<2; i++)
+//      {
+//          if(
         is_solved = mgmres (a, ia, ja, x, rhs,
                             rB.size(), nz_sum, BaseType::GetMaxIterationsNumber(), inner_iterations,
                             BaseType::GetTolerance() );/*)*/
-// 			{
-// 				break;
-// 			}
-// 			mNumberOfRestarts++;
-// 		}
+//          {
+//              break;
+//          }
+//          mNumberOfRestarts++;
+//      }
 
         for(unsigned int i=0; i<rB.size(); i++)
         {
             rX(i)=x[i];
         }
 
-//  	  BaseType::GetPreconditioner()->Finalize(rX);
+//        BaseType::GetPreconditioner()->Finalize(rX);
 
-// 	  //GetTimeTable()->Stop(Info());
+//    //GetTimeTable()->Stop(Info());
 //
         delete[] x;
         delete[] rhs;
@@ -240,7 +239,7 @@ public:
 
         if(!is_solved)
         {
-            SkylineLUFactorizationSolver<TSparseSpaceType, TDenseSpaceType, TReordererType>().Solve(rA, rX, rB);
+            SkylineLUFactorizationSolver<TSparseSpaceType, TDenseSpaceType, TModelPartType, TReordererType>().Solve(rA, rX, rB);
             std::cout<<"####GMRES not converged -> System solved with SkylineLUFactorizationSolver####"<<std::endl;
         }
 
@@ -255,7 +254,7 @@ public:
     guess for iterative linear solvers.
     @param rB. Right hand side vector.
     */
-    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB)
+    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB) override
     {
         //DOES NOTHING AT THE MOMENT
         bool is_solved = true;
@@ -280,7 +279,7 @@ public:
     ///@{
 
     /// Return information about this object.
-    virtual std::string Info() const
+    std::string Info() const override
     {
         std::stringstream buffer;
         buffer << "GMRES iterative solver [at the moment unfortunately without] with " << BaseType::GetPreconditioner()->Info();
@@ -288,19 +287,18 @@ public:
     }
 
     /// Print information about this object.
-    void  PrintInfo(std::ostream& OStream) const
+    void PrintInfo(std::ostream& OStream) const override
     {
         OStream << "GMRES iterative solver [at the moment unfortunately without] with ";
         BaseType::GetPreconditioner()->PrintInfo(OStream);
     }
 
     /// Print object's data.
-    void  PrintData(std::ostream& OStream) const
+    void PrintData(std::ostream& OStream) const override
     {
         OStream << "GMRES "<<mNumberOfRestarts<<" times restarted"<<std::endl;
         BaseType::PrintData(OStream);
     }
-
 
     ///@}
     ///@name Friends
@@ -864,36 +862,8 @@ private:
 ///@{
 
 
-/// input stream function
-template<class TSparseSpaceType, class TDenseSpaceType,
-         class TPreconditionerType,
-         class TReordererType>
-inline std::istream& operator >> (std::istream& rIStream,
-                                  GMRESSolver<TSparseSpaceType, TDenseSpaceType,
-                                  TPreconditionerType, TReordererType>& rThis)
-{
-    return rIStream;
-}
+///@}
 
-/// output stream function
-template<class TSparseSpaceType, class TDenseSpaceType,
-         class TPreconditionerType,
-         class TReordererType>
-inline std::ostream& operator << (std::ostream& OStream,
-                                  const GMRESSolver<TSparseSpaceType, TDenseSpaceType,
-                                  TPreconditionerType, TReordererType>& rThis)
-{
-    rThis.PrintInfo(OStream);
-    OStream << std::endl;
-    rThis.PrintData(OStream);
-
-    return OStream;
-}
-//   ///@}
-//
-//
 }  // namespace Kratos.
 
-#endif // KRATOS_GMRES_SOLVER_H_INCLUDED  defined 
-
-
+#endif // KRATOS_GMRES_SOLVER_H_INCLUDED  defined
