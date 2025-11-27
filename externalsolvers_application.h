@@ -127,7 +127,6 @@ public:
         KratosComponents<Condition>().PrintData(rOStream);
     }
 
-
     ///@}
     ///@name Friends
     ///@{
