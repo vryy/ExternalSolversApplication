@@ -146,6 +146,7 @@ public:
         */
         set_default_options(&options);
         options.IterRefine = SLU_DOUBLE;
+        options.PrintStat = YES;
 //         options.ColPerm = MMD_AT_PLUS_A;
 
         //Fill the SuperLU matrices
@@ -204,9 +205,8 @@ public:
         dgssv(&options, &Aslu, perm_c, perm_r, &L, &U, &B, &stat, &info);
 
         //print output
-        if (options.PrintStat) {
-        StatPrint(&stat);
-        }
+        if (options.PrintStat)
+            StatPrint(&stat);
 
         //resubstitution of results
         #pragma omp parallel for
@@ -335,9 +335,8 @@ public:
         dgssv(&options, &Aslu, perm_c, perm_r, &L, &U, &B, &stat, &info);
 
         //print output
-        if (options.PrintStat) {
-        StatPrint(&stat);
-        }
+        if (options.PrintStat)
+            StatPrint(&stat);
 
         //resubstitution of results
         #pragma omp parallel for
@@ -398,7 +397,7 @@ private:
      */
     SuperLUSolver(const SuperLUSolver& Other);
 
-}; // Class SkylineLUFactorizationSolver
+}; // Class SuperLUSolver
 
 }  // namespace Kratos.
 
