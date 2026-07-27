@@ -57,7 +57,8 @@
 #include "includes/define.h"
 #include "linear_solvers/direct_solver.h"
 
-namespace ublas = boost::numeric::ublas;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 namespace Kratos
 {
@@ -195,7 +196,6 @@ public:
         int* perm_r;
         if ( !(perm_c = intMalloc(rA.size1())) ) ABORT("Malloc fails for perm_c[].");
         if ( !(perm_r = intMalloc(rA.size2())) ) ABORT("Malloc fails for perm_r[].");
-
 
         //initialize container for statistical data
         StatInit(&stat);
@@ -400,5 +400,7 @@ private:
 }; // Class SuperLUSolver
 
 }  // namespace Kratos.
+
+#pragma clang diagnostic pop
 
 #endif // KRATOS_SUPERLU_SOLVER_H_INCLUDED  defined

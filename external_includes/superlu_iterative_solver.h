@@ -57,6 +57,9 @@
 #include "includes/define.h"
 #include "linear_solvers/direct_solver.h"
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
 namespace ublas = boost::numeric::ublas;
 
 namespace Kratos
@@ -665,5 +668,7 @@ private:
 }; // Class SkylineLUFactorizationSolver
 
 }  // namespace Kratos.
+
+#pragma clang diagnostic pop
 
 #endif // KRATOS_SUPERLU_ITERATIVE_SOLVER_H_INCLUDED  defined
