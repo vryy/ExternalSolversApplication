@@ -81,7 +81,7 @@ using TUblasDenseSpace =
  * @param rIterationNumber The current number of iterations
  * @param rResidual The current residual of the problem
  */
-void KRATOS_API(KRATOS_CORE) AMGCLSolve(
+void KRATOS_API(EXTERNAL_SOLVERS_APPLICATION) AMGCLSolve(
     int block_size,
     TUblasSparseSpace<double>::MatrixType& rA,
     TUblasSparseSpace<double>::VectorType& rX,

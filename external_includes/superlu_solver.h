@@ -57,8 +57,10 @@
 #include "includes/define.h"
 #include "linear_solvers/direct_solver.h"
 
+#if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 namespace Kratos
 {
@@ -401,6 +403,8 @@ private:
 
 }  // namespace Kratos.
 
+#if defined(__clang__)
 #pragma clang diagnostic pop
+#endif
 
 #endif // KRATOS_SUPERLU_SOLVER_H_INCLUDED  defined
