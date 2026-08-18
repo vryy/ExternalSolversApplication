@@ -22,6 +22,10 @@
 namespace Kratos
 {
 
+KratosExternalSolversApplication::KratosExternalSolversApplication()
+    : KratosApplication("ExternalSolversApplication")
+{}
+
 void KratosExternalSolversApplication::Register()
 {
     std::cout << "Initializing KratosExternalSolversApplication..." << std::endl;

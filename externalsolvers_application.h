@@ -68,11 +68,10 @@ public:
     ///@{
 
     /// Default constructor.
-    KratosExternalSolversApplication() {}
+    KratosExternalSolversApplication();
 
     /// Destructor.
     ~KratosExternalSolversApplication() override {}
-
 
     ///@}
     ///@name Operators
