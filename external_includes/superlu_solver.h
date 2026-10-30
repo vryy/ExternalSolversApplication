@@ -120,12 +120,6 @@ public:
      */
     bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB) override
     {
-        // std::cout << "matrix size in solver:  " << rA.size1() << std::endl;
-        // std::cout << "RHS size in solver SLU: " << rB.size() << std::endl;
-
-//               typedef ublas::compressed_matrix<double, ublas::row_major, 0,
-//                 ublas::unbounded_array<int>, ublas::unbounded_array<double> > cm_t;
-
         //make a copy of the RHS
         VectorType rC=rB;
 
@@ -249,12 +243,6 @@ public:
      */
     bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB) override
     {
-        //std::cout << "matrix size in solver:  " << rA.size1() << std::endl;
-        //std::cout << "RHS size in solver SLU: " << rB.size() << std::endl;
-
-//               typedef ublas::compressed_matrix<double, ublas::row_major, 0,
-//                 ublas::unbounded_array<int>, ublas::unbounded_array<double> > cm_t;
-
         if(this->IsNotConsistent(rA, rX, rB))
             return false;
 

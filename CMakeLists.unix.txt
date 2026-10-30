@@ -1,7 +1,7 @@
 set(EXTERNAL_SOLVERS_APPLICATION_COMPILE_DEFS "")
 
-if(${INCLUDE_PASTIX} MATCHES ON)
-    set(${EXCLUDE_ITSOL} ON)
+if(INCLUDE_PASTIX)
+    set(EXCLUDE_ITSOL ON)
     message("************************** ITSOL NOT COMPILED AS IT IS INCOMPATIBLE WITH PASTIX **************** ")
 endif()
 
@@ -9,13 +9,13 @@ set(EXTERNAL_SOLVERS_APPLICATION_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/custo
 
 # add subdirectories for compilation of dependent libraries
 option(ENABLE_SUPERLU "Enable the SuperLU solver" ON)
-if(${ENABLE_SUPERLU} MATCHES ON)
+if(ENABLE_SUPERLU)
     set(EXTERNAL_SOLVERS_APPLICATION_COMPILE_DEFS "${EXTERNAL_SOLVERS_APPLICATION_COMPILE_DEFS};ENABLE_SUPERLU")
     set(EXTERNAL_SOLVERS_APPLICATION_INCLUDE_DIRS "${EXTERNAL_SOLVERS_APPLICATION_INCLUDE_DIRS};${CMAKE_CURRENT_SOURCE_DIR}/custom_external_libraries/SuperLU_4.3")
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/custom_external_libraries/SuperLU_4.3)
 endif()
 
-if(${EXCLUDE_ITSOL} MATCHES ON)
+if(EXCLUDE_ITSOL)
     set(EXTERNAL_SOLVERS_APPLICATION_COMPILE_DEFS "${EXTERNAL_SOLVERS_APPLICATION_COMPILE_DEFS};EXCLUDE_ITSOL")
 else()
     #for ITSOL
@@ -24,11 +24,11 @@ else()
     set(EXTERNAL_SOLVERS_APPLICATION_INCLUDE_DIRS "${EXTERNAL_SOLVERS_APPLICATION_INCLUDE_DIRS};${CMAKE_CURRENT_SOURCE_DIR}/custom_external_libraries/ITSOL_2/INC")
 endif()
 
-if(${EXCLUDE_AMGCL} MATCHES ON)
+if(EXCLUDE_AMGCL)
     set(EXTERNAL_SOLVERS_APPLICATION_COMPILE_DEFS "${EXTERNAL_SOLVERS_APPLICATION_COMPILE_DEFS};EXCLUDE_AMGCL")
 endif()
 
-if(${INCLUDE_PASTIX} MATCHES ON)
+if(INCLUDE_PASTIX)
     set(EXTERNAL_SOLVERS_APPLICATION_COMPILE_DEFS "${EXTERNAL_SOLVERS_APPLICATION_COMPILE_DEFS};INCLUDE_PASTIX")
     set(EXTERNAL_SOLVERS_APPLICATION_INCLUDE_DIRS "${EXTERNAL_SOLVERS_APPLICATION_INCLUDE_DIRS};${PASTIX_INSTALL_DIR}")
     find_library(PASTIX_LINK_LIB pastix  ${PASTIX_INSTALL_DIR})
@@ -50,26 +50,26 @@ set( KRATOS_EXTERNAL_SOLVERS_APPLICATION_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/custom_python/add_linear_solvers_to_python.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/custom_python/externalsolvers_python_application.cpp
 )
-#
-# ###############################################################
+
+###############################################################
 add_library(KratosExternalSolversApplicationDependencies INTERFACE)
-if(${ENABLE_SUPERLU} MATCHES ON)
+if(ENABLE_SUPERLU)
     target_link_libraries(KratosExternalSolversApplicationDependencies INTERFACE superlu)
 endif()
 
-if(${EXCLUDE_ITSOL} MATCHES ON)
-    if(${INCLUDE_PASTIX} MATCHES ON)
+if(EXCLUDE_ITSOL)
+    if(INCLUDE_PASTIX)
         target_link_libraries(KratosExternalSolversApplicationDependencies INTERFACE kratos_pastix rt)
     endif()
 else()
-    if(${INCLUDE_PASTIX} MATCHES ON)
+    if(INCLUDE_PASTIX)
         target_link_libraries(KratosExternalSolversApplicationDependencies INTERFACE itsol_solvers kratos_pastix rt)
     else()
         target_link_libraries(KratosExternalSolversApplicationDependencies INTERFACE itsol_solvers )
     endif()
 endif()
 
-# ## define library Kratos which defines the basic python interface
+## define library Kratos which defines the basic python interface
 add_library(KratosExternalSolversApplication SHARED ${KRATOS_EXTERNAL_SOLVERS_APPLICATION_SOURCES})
 
 target_link_libraries(KratosExternalSolversApplication PRIVATE KratosCore)
@@ -93,8 +93,8 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 endif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 
 if(${INSTALL_PYTHON_FILES} MATCHES ON)
-  get_filename_component (CURRENT_DIR_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
-  install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/python_scripts DESTINATION applications/${CURRENT_DIR_NAME}  FILES_MATCHING PATTERN "*.py"  PATTERN ".svn" EXCLUDE)
+    get_filename_component (CURRENT_DIR_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/python_scripts DESTINATION applications/${CURRENT_DIR_NAME}  FILES_MATCHING PATTERN "*.py"  PATTERN ".svn" EXCLUDE)
 endif(${INSTALL_PYTHON_FILES} MATCHES ON)
 
 install(TARGETS KratosExternalSolversApplication DESTINATION libs )
